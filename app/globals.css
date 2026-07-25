@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: #f7f7f4; }
+button, input, textarea { font: inherit; }
+button:not(:disabled) { cursor: pointer; }
+::selection { background: #dbe8df; color: #10231b; }
