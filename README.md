@@ -1,4 +1,3 @@
-# ai-interviewer
 # AI Interviewer
 
 A dynamic AI interview simulator that conducts realistic, personalized interviews based on a candidate’s resume and target job description.
