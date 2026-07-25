@@ -4,7 +4,7 @@ A dynamic AI interview simulator that conducts realistic, personalized interview
 
 Rather than presenting a predetermined list of questions, AI Interviewer behaves like a live interviewer. It listens to each response, decides what matters, asks targeted follow-up questions, changes direction when appropriate, and builds an evidence-based assessment of the candidate’s performance.
 
-The goal is not simply to help candidates rehearse answers. The goal is to reproduce the pressure, uncertainty, pacing, and conversational dynamics of an actual interview as closely as possible.
+The goal is to reproduce the pressure, uncertainty, pacing, and conversational dynamics of an actual interview as closely as possible.
 
 ## Overview
 
