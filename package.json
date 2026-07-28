@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:static": "BUILD_TARGET=static next build && touch out/.nojekyll",
     "start": "next start",
+    "serve:static": "rm -rf .static-preview && mkdir -p .static-preview/ai-interviewer && cp -R out/. .static-preview/ai-interviewer/ && serve .static-preview -l 4173 --no-request-logging",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -26,6 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
+    "serve": "^14.2.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

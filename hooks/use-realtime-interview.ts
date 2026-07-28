@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RealtimeInterviewClient } from "@/lib/openai/realtime/client";
 import { userSafeRealtimeError } from "@/lib/openai/realtime/error";
 import { applyVoiceTurnEvent, canFinishAnswer, initialVoiceTurnState, resetVoiceTurnAfterResponse } from "@/lib/openai/realtime/turn-state";
+import { withBasePath } from "@/lib/runtime-capabilities";
 import type { RealtimeConnectionState } from "@/lib/openai/realtime/types";
 
 export function useRealtimeInterview(context: Record<string, unknown>) {
@@ -44,7 +45,7 @@ export function useRealtimeInterview(context: Record<string, unknown>) {
     setFinishMessage(null);
     setTurn(initialVoiceTurnState);
     try {
-      const response = await fetch("/api/realtime/session", {
+      const response = await fetch(withBasePath("/api/realtime/session"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sessionId: id.current, ...context }),
