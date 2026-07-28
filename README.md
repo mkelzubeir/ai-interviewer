@@ -21,7 +21,7 @@ server-backed modes are absent there rather than broken.
 | Feedback report | ✅ | ✅ |
 | AI-adaptive questions (OpenAI) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
 | Live voice interview (Realtime) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
-| Sign in and save reports | ✅ if Supabase is configured | ✅ if Supabase is configured |
+| Sign in and save reports | ✅ | ✅ if Supabase is configured |
 
 On the static build the app detects that no server is present, hides the AI and
 voice controls, states why, and runs entirely on the local deterministic

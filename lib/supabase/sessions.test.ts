@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fromSessionRow, savedSessionRowSchema, toSessionRow } from "./sessions";
 import { emptySession } from "@/lib/interview-session";
 import { createReport } from "@/lib/report";
-import { supabaseConfigured } from "./client";
+import { getSupabaseClient } from "./client";
 
 const question = { id: "q", prompt: "Tell me about impact.", competency: "Impact", topic: "impact", kind: "impact" as const };
 
@@ -11,9 +11,11 @@ function completed() {
   return { ...session, completedReport: createReport(session) };
 }
 
-describe("supabase configuration", () => {
-  it("stays disabled when no public env vars are set, keeping anonymous mode intact", () => {
-    expect(supabaseConfigured).toBe(false);
+describe("supabase gating", () => {
+  it("never constructs a client outside the browser, however the env is set", () => {
+    // Auth and persistence are strictly client-side; a server-side client would
+    // be a route to using the key somewhere it was never meant to be used.
+    expect(getSupabaseClient()).toBeNull();
   });
 });
 

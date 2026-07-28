@@ -58,6 +58,34 @@ test("the static demo hides server-only modes and defaults to the local engine",
   await expect(page.getByText("Live voice interview")).toHaveCount(0);
 });
 
+test("practice never requires an account", async ({ page }) => {
+  await page.goto("interview");
+
+  const signIn = page.getByRole("button", { name: "Sign in to save reports" });
+  const configured = await signIn.count() > 0;
+
+  // Setup must be usable immediately either way — no auth wall, no blocking dialog.
+  await expect(page.getByRole("button", { name: "Try sample interview" })).toBeEnabled();
+
+  if (!configured) {
+    // Supabase not configured: the auth surface must be entirely absent.
+    await expect(page.getByText(/Sign in|Sign out/)).toHaveCount(0);
+    return;
+  }
+
+  // Configured: sign-in is opt-in and clearly optional, and reveals the
+  // magic-link form without leaving the page.
+  await signIn.click();
+  await expect(page.getByLabel("Email a sign-in link")).toBeVisible();
+  await expect(page.getByText(/practice works signed out/i)).toBeVisible();
+
+  // Closing it leaves the interview flow untouched.
+  await signIn.click();
+  await page.getByRole("button", { name: "Try sample interview" }).click();
+  await page.getByRole("button", { name: /Start interview/ }).click();
+  await expect(page.getByText(/Deterministic sample demonstration/)).toBeVisible();
+});
+
 test("completes a sample interview, recovers a mid-session refresh, and produces a report", async ({ page }) => {
   await startSampleInterview(page);
 
