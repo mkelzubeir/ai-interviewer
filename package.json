@@ -10,7 +10,8 @@
     "serve:static": "rm -rf .static-preview && mkdir -p .static-preview/ai-interviewer && cp -R out/. .static-preview/ai-interviewer/ && serve .static-preview -l 4173 --no-request-logging",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "^16.1.6",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.10.9",
     "@types/react": "^19.2.9",
