@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRealtimeInterview } from "@/hooks/use-realtime-interview";
+import type { VoiceTranscriptEntry } from "@/lib/schemas";
 
 type VoiceContext = {
   interviewType: string;
@@ -12,20 +13,18 @@ type VoiceContext = {
   remainingBudget: number;
 };
 
-export function VoiceInterviewPanel({ context }: { context: VoiceContext }) {
-  const voice = useRealtimeInterview(context);
+export function VoiceInterviewPanel({ context, onFinalTranscript }: { context: VoiceContext; onFinalTranscript: (entry: VoiceTranscriptEntry) => void }) {
+  const voice = useRealtimeInterview({ context, onFinalTranscript });
   const [consent, setConsent] = useState(false);
   const [muted, setMuted] = useState(false);
   const live = voice.status === "connected";
+  const dropped = voice.status === "failed" || voice.status === "closed";
 
-  // Media-track WebRTC sessions use server VAD; there is no safe client-side manual commit.
-  // Keep the control visible as an accessibility explanation, but never emit an invalid event.
-  const finishDisabled = true;
-  const finishHelp = voice.turn.interviewerSpeaking
-    ? "Finish answer is unavailable while the interviewer is speaking."
-    : voice.canFinish
-      ? "Automatic turn detection will finish your answer after a brief pause."
-      : "I haven’t detected an answer yet. Start speaking, then pause briefly for automatic turn detection.";
+  const turnHelp = voice.turn.interviewerSpeaking
+    ? "The interviewer is speaking. Use Interrupt if you need to cut in."
+    : voice.awaitingTurnEnd
+      ? "Pause briefly and automatic turn detection will finish your answer."
+      : "Start speaking. Automatic turn detection handles when your answer ends.";
 
   return (
     <section className="mx-auto mb-5 max-w-5xl rounded-xl border border-[#bcd3c2] bg-[#f3faf4] p-4">
@@ -36,15 +35,12 @@ export function VoiceInterviewPanel({ context }: { context: VoiceContext }) {
         </div>
         {!live ? (
           <button onClick={() => (consent ? void voice.start() : setConsent(true))} className="rounded-full bg-[#315248] px-4 py-2 text-sm font-semibold text-white">
-            {consent ? "Allow microphone & start" : "Start voice interview"}
+            {consent ? "Allow microphone & start" : dropped ? "Retry voice interview" : "Start voice interview"}
           </button>
         ) : (
           <div className="flex flex-wrap gap-2">
             <button onClick={() => { const next = !muted; setMuted(next); voice.mute(next); }} className="rounded-full border border-[#9db7a4] bg-white px-3 py-2 text-xs">
               {muted ? "Unmute" : "Mute"}
-            </button>
-            <button disabled={finishDisabled} aria-describedby="finish-answer-help" className="rounded-full bg-[#315248] px-3 py-2 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50">
-              Finish answer
             </button>
             <button onClick={voice.interrupt} disabled={!voice.canInterrupt} className="rounded-full border border-[#9db7a4] bg-white px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50">
               Interrupt
@@ -52,9 +48,9 @@ export function VoiceInterviewPanel({ context }: { context: VoiceContext }) {
           </div>
         )}
       </div>
-      {live && <p id="finish-answer-help" className="mt-2 text-xs text-slate-500">{finishHelp}</p>}
+      {live && <p className="mt-2 text-xs text-slate-500">{turnHelp}</p>}
       <p aria-live="polite" className="mt-3 text-xs text-slate-500">Voice status: {voice.status}. Text mode remains available below.</p>
-      {voice.finishMessage && <p aria-live="polite" className="mt-2 text-xs text-slate-600">{voice.finishMessage}</p>}
+      {dropped && <p aria-live="polite" className="mt-2 text-xs text-slate-600">Voice has ended. Your interview and transcript are preserved — keep going in text mode below, or retry voice.</p>}
       {voice.error && <p role="alert" className="mt-2 text-xs text-red-700">{voice.error} Continue in text mode or retry voice.</p>}
       {voice.partial && <p className="mt-2 text-xs text-slate-600">Live transcript: {voice.partial}</p>}
     </section>

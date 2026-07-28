@@ -16,11 +16,9 @@ export class RealtimeInterviewClient {
     const response = await fetch("https://api.openai.com/v1/realtime/calls", { method: "POST", headers: { Authorization: `Bearer ${credential.value}`, "Content-Type": "application/sdp" }, body: offer.sdp }); if (!response.ok) throw new Error("WebRTC negotiation failed."); await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
   }
   setMuted(muted: boolean) { this.stream?.getAudioTracks().forEach((track) => { track.enabled = !muted; }); }
-  doneAnswering() {
-    // WebRTC microphone tracks are committed by server VAD. Sending an input_audio_buffer.commit
-    // here would target an empty manually-appended buffer and can create a duplicate response.
-    return false;
-  }
+  // Note: there is deliberately no manual commit. WebRTC microphone tracks are
+  // committed by server VAD; sending input_audio_buffer.commit would target an
+  // empty manually-appended buffer and can create a duplicate response.
   interrupt() { this.channel?.send(JSON.stringify({ type: "response.cancel" })); this.channel?.send(JSON.stringify({ type: "output_audio_buffer.clear" })); }
   close() { this.stream?.getTracks().forEach((track) => track.stop()); this.channel?.close(); this.peer?.close(); this.audio?.pause(); this.peer = null; this.channel = null; this.stream = null; this.audio = null; this.onState("closed"); }
 }

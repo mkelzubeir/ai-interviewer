@@ -8,7 +8,6 @@ export const initialVoiceTurnState: VoiceTurnState = {
   interviewerSpeaking: false,
   currentTurnStartedAt: null,
   currentTurnHasEvidence: false,
-  finishHintRequested: false,
 };
 
 export function applyVoiceTurnEvent(
@@ -24,7 +23,6 @@ export function applyVoiceTurnEvent(
         candidateSpeechActive: true,
         candidateTurnCommitted: false,
         currentTurnStartedAt: state.currentTurnStartedAt ?? now,
-        finishHintRequested: false,
       };
     case "candidate.speech_stopped":
       return { ...state, candidateSpeechActive: false };
@@ -32,7 +30,7 @@ export function applyVoiceTurnEvent(
     case "candidate.final":
       return { ...state, currentTurnHasEvidence: Boolean(event.text?.trim()) || state.currentTurnHasEvidence };
     case "candidate.turn_committed":
-      return { ...state, candidateSpeechActive: false, candidateTurnCommitted: true, finishHintRequested: false };
+      return { ...state, candidateSpeechActive: false, candidateTurnCommitted: true };
     case "response.created":
       return { ...state, responseActive: true };
     case "response.done":
@@ -46,14 +44,19 @@ export function applyVoiceTurnEvent(
   }
 }
 
+/**
+ * Whether an answer is in flight and still awaiting VAD finalization.
+ *
+ * Media-track WebRTC sessions have no valid client-side commit, so this drives
+ * explanatory UI only — it never gates a Realtime event.
+ */
 export function canFinishAnswer(status: RealtimeConnectionState, state: VoiceTurnState) {
   return status === "connected"
     && !state.interviewerSpeaking
     && state.candidateSpeechStarted
     && state.currentTurnHasEvidence
     && !state.candidateTurnCommitted
-    && !state.responseActive
-    && !state.finishHintRequested;
+    && !state.responseActive;
 }
 
 export function resetVoiceTurnAfterResponse(state: VoiceTurnState): VoiceTurnState {

@@ -1,6 +1,8 @@
 export type RealtimeConnectionState = "idle" | "requesting-permission" | "connecting" | "connected" | "reconnecting" | "failed" | "closed";
+// The persisted shape is the source of truth so the durable session and the
+// realtime adapter cannot drift apart.
+export type { VoiceTranscriptEntry } from "@/lib/schemas";
 export type VoiceSpeaker = "candidate" | "interviewer";
-export type VoiceTranscriptEntry = { id: string; speaker: VoiceSpeaker; text: string; timestamp: number; final: boolean; interrupted: boolean };
 export type NormalizedRealtimeEvent = {
   type:
     | "candidate.partial"
@@ -29,5 +31,4 @@ export type VoiceTurnState = {
   interviewerSpeaking: boolean;
   currentTurnStartedAt: number | null;
   currentTurnHasEvidence: boolean;
-  finishHintRequested: boolean;
 };

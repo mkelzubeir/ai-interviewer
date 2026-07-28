@@ -25,15 +25,24 @@ describe("voice turn state", () => {
     expect(canFinishAnswer("connected", committed)).toBe(false);
   });
 
-  it("prevents a duplicate response and rapid Finish answer requests", () => {
+  it("stops treating a turn as pending once the interviewer starts responding", () => {
     const ready = applyVoiceTurnEvent(
       applyVoiceTurnEvent(initialVoiceTurnState, { type: "candidate.speech_started" }),
       { type: "candidate.partial", text: "A concrete answer" },
     );
-    const hinted = { ...ready, finishHintRequested: true };
-    expect(canFinishAnswer("connected", hinted)).toBe(false);
+    expect(canFinishAnswer("connected", ready)).toBe(true);
     const responding = applyVoiceTurnEvent(ready, { type: "response.created" });
     expect(canFinishAnswer("connected", responding)).toBe(false);
+  });
+
+  it("reports nothing pending unless the session is connected", () => {
+    const ready = applyVoiceTurnEvent(
+      applyVoiceTurnEvent(initialVoiceTurnState, { type: "candidate.speech_started" }),
+      { type: "candidate.final", text: "I led the migration." },
+    );
+    expect(canFinishAnswer("connected", ready)).toBe(true);
+    expect(canFinishAnswer("failed", ready)).toBe(false);
+    expect(canFinishAnswer("closed", ready)).toBe(false);
   });
 
   it("does not permit finishing or interrupting while interviewer audio is active", () => {

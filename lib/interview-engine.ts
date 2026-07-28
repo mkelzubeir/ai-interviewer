@@ -1,6 +1,9 @@
 import type { InterviewDecision, InterviewType, Question, StoredSession } from "./schemas";
 
-const library: Question[] = [
+// Sample mode is a documented deterministic demonstration built around the
+// fictional Avery Morgan / Meridian Works fixture, so these prompts must not
+// change. Everyone else gets `generalLibrary` below, which names no persona.
+const sampleLibrary: Question[] = [
   { id: "opening-strategic", prompt: "Avery, to start, what draws you to Strategic Projects at Meridian Works at this point in your career?", competency: "Motivation", topic: "motivation", kind: "opening" },
   { id: "resume-prioritization", prompt: "Your resume mentions building a cross-functional intake and prioritization process. How did you decide what the process needed to solve?", competency: "Problem framing", topic: "prioritization", kind: "resume" },
   { id: "motivation-meridian", prompt: "Which part of Meridian's operating model feels most aligned with work you have done, and where would you need to ramp up?", competency: "Role motivation", topic: "role-fit", kind: "motivation" },
@@ -10,6 +13,21 @@ const library: Question[] = [
   { id: "manager-ambiguity", prompt: "When a senior group agrees a problem matters but not what to do about it, how do you create momentum?", competency: "Execution", topic: "ambiguity", kind: "behavioral" },
   { id: "recruiter-transition", prompt: "What would make this role the right next move for you, beyond the title?", competency: "Career intent", topic: "career", kind: "motivation" },
 ];
+
+// Same ids, topics, competencies and kinds as the sample fixture — only the
+// wording differs — so selection rules, budgets and follow-ups behave identically.
+const generalLibrary: Question[] = [
+  { id: "opening-strategic", prompt: "To start, what draws you to this role at this point in your career?", competency: "Motivation", topic: "motivation", kind: "opening" },
+  { id: "resume-prioritization", prompt: "Pick something from your background that you had to scope yourself. How did you decide what the work actually needed to solve?", competency: "Problem framing", topic: "prioritization", kind: "resume" },
+  { id: "motivation-meridian", prompt: "Which part of this role feels closest to work you have already done, and where would you need to ramp up?", competency: "Role motivation", topic: "role-fit", kind: "motivation" },
+  { id: "behavioral-alignment", prompt: "Tell me about a time stakeholders disagreed on the right path forward.", competency: "Stakeholder alignment", topic: "alignment", kind: "behavioral" },
+  { id: "impact-measurement", prompt: "How do you decide whether a piece of work has made a meaningful difference?", competency: "Impact measurement", topic: "measurement", kind: "impact" },
+  { id: "judgment-tradeoffs", prompt: "Describe a difficult tradeoff you have made when capacity, urgency, and expectations were in tension.", competency: "Judgment", topic: "tradeoffs", kind: "judgment" },
+  { id: "manager-ambiguity", prompt: "When a senior group agrees a problem matters but not what to do about it, how do you create momentum?", competency: "Execution", topic: "ambiguity", kind: "behavioral" },
+  { id: "recruiter-transition", prompt: "What would make this role the right next move for you, beyond the title?", competency: "Career intent", topic: "career", kind: "motivation" },
+];
+
+export function questionLibrary(sampleMode: boolean) { return sampleMode ? sampleLibrary : generalLibrary; }
 
 const typeTopics: Record<InterviewType, string[]> = {
   recruiter: ["motivation", "career", "role-fit", "alignment"], behavioral: ["alignment", "tradeoffs", "ambiguity", "measurement"], "hiring-manager": ["prioritization", "alignment", "measurement", "tradeoffs"], "role-specific": ["prioritization", "measurement", "ambiguity", "tradeoffs"], mixed: ["motivation", "prioritization", "alignment", "measurement", "tradeoffs"],
@@ -40,8 +58,12 @@ function followUp(question: Question, rule: "example" | "ownership" | "evidence"
 }
 
 function chooseNewQuestion(session: StoredSession) {
+  const library = questionLibrary(session.sampleMode);
   const desired = typeTopics[session.interviewType];
   return library.find((question) => desired.includes(question.topic) && !session.questionsAsked.some((asked) => asked.topic === question.topic)) ?? library.find((question) => !session.questionsAsked.some((asked) => asked.topic === question.topic));
 }
 
-export function firstQuestion(type: InterviewType) { return type === "recruiter" ? library.find((q) => q.id === "recruiter-transition")! : library[0]; }
+export function firstQuestion(type: InterviewType, sampleMode: boolean) {
+  const library = questionLibrary(sampleMode);
+  return type === "recruiter" ? library.find((q) => q.id === "recruiter-transition")! : library[0];
+}
