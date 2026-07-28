@@ -1,19 +1,31 @@
 # AI Interviewer
 
-## Current implementation
+A mock interview practice tool. Bring a resume and a job description, answer
+one question at a time, and get an evidence-based feedback report built from
+your own transcript — not from invented achievements.
 
-Phase 1 is a local, text-only mock interview application built with Next.js,
-TypeScript, Tailwind CSS, and the App Router. It includes setup, five interview
-formats, three durations, a deterministic adaptive interview engine, local
-session recovery, and a transcript-based feedback report.
+**Live demo: https://mkelzubeir.github.io/ai-interviewer/**
 
-You can paste a resume or upload a PDF (up to 5 MB). Selectable text is
-extracted locally in the browser and remains editable; scanned PDFs without a
-text layer require pasted text.
+## What works where
 
-Use **Try sample interview** to load a fictional Strategic Projects / Business
-Operations candidate. Sample mode is a deterministic demonstration; it does
-not claim to generate questions with AI and does not require an API key.
+The demo is a static export on GitHub Pages. It has no server, so the two
+server-backed modes are absent there rather than broken.
+
+| | Live demo | Local (`npm run dev`) |
+|---|---|---|
+| Sample interview | ✅ | ✅ |
+| Your own resume / job description | ✅ | ✅ |
+| PDF resume text extraction | ✅ | ✅ |
+| Deterministic adaptive engine | ✅ | ✅ |
+| Session recovery after a refresh | ✅ | ✅ |
+| Feedback report | ✅ | ✅ |
+| AI-adaptive questions (OpenAI) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
+| Live voice interview (Realtime) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
+| Sign in and save reports | ✅ if Supabase is configured | ✅ if Supabase is configured |
+
+On the static build the app detects that no server is present, hides the AI and
+voice controls, states why, and runs entirely on the local deterministic
+engine. `OPENAI_API_KEY` is never present in client code in any build.
 
 ## Run locally
 
@@ -22,48 +34,153 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. Nothing else is required — the full interview,
+recovery and report flow works with no key and no account.
+
+## Environment variables
+
+Copy `.env.example` to `.env.local`. Every variable is optional.
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | Enables AI-adaptive questions and voice. **Server-only.** |
+| `OPENAI_MODEL` | Model for adaptive text turns. Default `gpt-5.6-terra`. |
+| `OPENAI_REALTIME_MODEL` | Default `gpt-realtime`. |
+| `OPENAI_REALTIME_VOICE` | Default `marin`. |
+| `OPENAI_REQUEST_TIMEOUT_MS` | Default `15000`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Enables sign-in and saved reports. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable key; safe in the client bundle. |
+
+The environment is validated with Zod at request time. A malformed value
+disables the affected mode with a logged reason instead of failing a live
+interview — the deterministic engine always keeps working.
+
+## Privacy
+
+By default nothing leaves your browser. The setup screen carries an explicit,
+unchecked-by-default opt-in; only after you check it does your resume and job
+description get sent to OpenAI to choose the next question, and only then does
+the voice panel appear. Sample mode can never opt in.
+
+Voice sends microphone audio to OpenAI for live processing. The app does not
+intentionally retain raw audio. Realtime transcription is an aid and may differ
+from what the model heard.
+
+## Voice (Realtime WebRTC)
+
+The interview page includes an opt-in voice panel when a key is configured and
+you have consented. It requests microphone permission only after an explicit
+action, obtains a short-lived Realtime client secret from the server, and
+negotiates WebRTC directly with OpenAI. The browser never receives
+`OPENAI_API_KEY`.
+
+Server VAD owns turn-taking: it decides when your answer has ended. There is
+deliberately **no** manual "I'm done answering" control — over a WebRTC media
+track a client-side `input_audio_buffer.commit` targets an empty buffer and can
+produce a duplicate response. Mute, interruption, retry and text fallback are
+available. If the session drops, voice releases cleanly, the transcript and
+interview state are preserved, and you continue in text mode or retry.
+
+Use a current WebRTC-capable browser with a microphone. The automated suite
+mocks no live device or Realtime session; test a real microphone manually
+before relying on it.
+
+## Accounts and saved reports (optional)
+
+With Supabase configured, a magic-link sign-in appears in the header and a
+completed report can be saved to your account. Sign-in is client-side PKCE, so
+it works on static hosting.
+
+Only the publishable anon key ships to the client — that is what it is for.
+**Row Level Security is the security boundary.** `interview_sessions` has RLS
+enabled with select/insert/delete policies scoped to `auth.uid()`, and no
+update policy, so reports are immutable once written. Resume and
+job-description text are never written to the table. localStorage remains the
+store of record for an in-progress interview, and anonymous local-only practice
+works exactly as it does without Supabase.
+
+### Setup
+
+1. Create a Supabase project.
+2. Run `supabase/migrations/0001_interview_sessions.sql` in the SQL editor.
+3. Under **Authentication → URL Configuration**, add redirect URLs for
+   `https://mkelzubeir.github.io/ai-interviewer/interview` and
+   `http://localhost:3000/interview`.
+4. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` locally,
+   and as GitHub repository **variables** for the deployed demo.
 
 ## Checks
 
 ```bash
 npm run lint
 npm run typecheck
-npm test
-npm run build
+npm test              # unit tests (vitest)
+npm run build         # server build, includes the API routes
 ```
 
-Playwright is not configured in this repository. The next browser-testing step
-is a happy-path test that loads sample mode, submits responses, and verifies the
-completed report after a refresh/recovery cycle.
+Browser tests run against the **production static export**, served from the
+`/ai-interviewer` subpath, so basePath and asset-prefix bugs fail in CI rather
+than on the live demo:
 
-## Planned / requires an OpenAI API key
-
-Phase 2 includes a server-only Responses API adapter for adaptive turns. Add
-`OPENAI_API_KEY` to `.env.local` (copy `.env.example`) to enable it. The app
-retains deterministic local mode when the provider is unavailable.
-Authentication, database storage, and OCR for scanned PDFs are not implemented.
-
-## Voice (Realtime WebRTC)
-
-The interview page includes an opt-in voice panel. It requests microphone
-permission only after an explicit action, obtains a short-lived Realtime client
-secret from the server, and negotiates WebRTC directly with OpenAI. The browser
-never receives `OPENAI_API_KEY`. Server VAD enables automatic turn-taking;
-mute, interruption, manual “I’m done answering,” retry, and text fallback are
-available.
-
-Set these values in `.env.local`:
-
-```env
-OPENAI_API_KEY=
-OPENAI_REALTIME_MODEL=gpt-realtime
-OPENAI_REALTIME_VOICE=
-OPENAI_REASONING_MODEL=
+```bash
+npm run build:static
+npm run test:e2e
 ```
 
-Use a current WebRTC-capable browser with a microphone. Microphone audio is
-sent to OpenAI for live processing. The app does not intentionally retain raw
-audio; Realtime transcription is an aid and may differ from what the model
-heard. The automated suite mocks no live device or Realtime session; test a
-real microphone/session manually before production use.
+To run the same specs against the deployed demo:
+
+```bash
+E2E_BASE_URL=https://mkelzubeir.github.io/ai-interviewer/ npm run test:e2e
+```
+
+CI runs lint, typecheck, unit tests, the static build and the browser suite on
+every push, then deploys to Pages from `main`.
+
+## Architecture
+
+Engine, report and persistence logic live outside React components.
+
+```text
+app/                              App Router landing and interview route
+app/api/**/route.server.ts        server-only routes; excluded from the static export
+components/                       interview shell and UI pieces
+hooks/                            realtime voice and Supabase auth hooks
+lib/schemas.ts                    domain + persisted session/report Zod schemas, v2→v3 migration
+lib/interview-engine.ts           question selection rules and the two question banks
+lib/interview-session.ts          reducer and resilient localStorage operations
+lib/report.ts                     transcript-only deterministic feedback
+lib/sample-data.ts                fictional Strategic Projects sample fixture
+lib/runtime-capabilities.ts       static-vs-server detection and basePath helpers
+lib/server-env.ts                 Zod validation of server environment
+lib/openai-provider.ts            Responses API adapter with typed failures
+lib/rate-limit.ts                 per-key fixed-window limiter with eviction
+lib/openai/realtime/              Realtime client, event adapter, turn state
+lib/supabase/                     browser client and saved-report row mapping
+supabase/migrations/              SQL schema and RLS policies
+e2e/                              Playwright specs against the static export
+```
+
+### Static export
+
+`BUILD_TARGET=static npm run build` emits `out/` with `basePath` and
+`assetPrefix` set to `/ai-interviewer` and unoptimized images. Route handlers
+are named `route.server.ts` and only registered through `pageExtensions` in the
+server build, so the OpenAI adapter and the Realtime endpoint are not merely
+disabled in the export — they are absent from it.
+
+### Interview engine
+
+Sample mode uses a fixed question bank built around the fictional Avery Morgan
+/ Meridian Works fixture. Everyone else gets a persona-neutral bank with the
+same ids, topics, competencies and kinds, so selection rules, budgets and
+follow-ups behave identically while nobody is asked about someone else's job.
+
+## Known limitations
+
+- **OCR for scanned PDFs is explicitly out of scope.** A PDF with no text layer
+  is rejected with a message asking you to paste the text instead.
+- The local engine uses transparent rules, not natural-language understanding.
+- Resume and job-description text are not semantically parsed.
+- Elapsed time is local browser time; there is no enforced session timer.
+- The report is always generated deterministically from the transcript.
+  AI-generated feedback is specified in PLAN.md but not implemented.
