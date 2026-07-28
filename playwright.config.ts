@@ -7,7 +7,10 @@ const port = 4173;
 // regressions fail in CI instead of on the live demo. The trailing slash matters:
 // Playwright resolves relative paths against baseURL with URL semantics, and
 // without it "interview" would resolve to the server root.
-const baseURL = `http://localhost:${port}/ai-interviewer/`;
+// E2E_BASE_URL points the same suite at a real deployment (must end with "/"),
+// which is how the published Pages demo gets verified.
+const deployedURL = process.env.E2E_BASE_URL;
+const baseURL = deployedURL ?? `http://localhost:${port}/ai-interviewer/`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -18,11 +21,15 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL, trace: "on-first-retry" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    // Requires a prior `npm run build:static`.
-    command: "npm run serve:static",
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  ...(deployedURL
+    ? {}
+    : {
+        webServer: {
+          // Requires a prior `npm run build:static`.
+          command: "npm run serve:static",
+          url: baseURL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 60_000,
+        },
+      }),
 });
