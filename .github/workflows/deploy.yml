@@ -38,6 +38,12 @@ jobs:
 
       - name: Build static export
         run: npm run build:static
+        env:
+          # Repository variables, not secrets: both values ship inside the client
+          # bundle by design. Row Level Security is the security boundary. If
+          # they are unset the demo simply builds without sign-in.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
