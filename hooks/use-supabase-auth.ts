@@ -18,6 +18,9 @@ export function useSupabaseAuth() {
   const [status, setStatus] = useState<AuthStatus>(supabaseConfigured ? "loading" : "unavailable");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Kept in state (not read on demand) so it stays current as supabase-js
+  // refreshes the session mid-interview.
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!client) return;
@@ -27,12 +30,14 @@ export function useSupabaseAuth() {
       if (!active) return;
       const current = data.session?.user;
       setUser(current ? { id: current.id, email: current.email ?? null } : null);
+      setAccessToken(data.session?.access_token ?? null);
       setStatus(current ? "signed-in" : "signed-out");
     });
 
     const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
       const current = session?.user;
       setUser(current ? { id: current.id, email: current.email ?? null } : null);
+      setAccessToken(session?.access_token ?? null);
       setStatus(current ? "signed-in" : "signed-out");
       if (current) setNotice(null);
     });
@@ -56,5 +61,5 @@ export function useSupabaseAuth() {
     setNotice(null);
   }, [client]);
 
-  return { client, status, user, notice, signIn, signOut };
+  return { client, status, user, accessToken, notice, signIn, signOut };
 }

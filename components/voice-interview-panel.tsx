@@ -13,12 +13,27 @@ type VoiceContext = {
   remainingBudget: number;
 };
 
-export function VoiceInterviewPanel({ context, onFinalTranscript }: { context: VoiceContext; onFinalTranscript: (entry: VoiceTranscriptEntry) => void }) {
-  const voice = useRealtimeInterview({ context, onFinalTranscript });
+export function VoiceInterviewPanel({ context, onFinalTranscript, accessToken, signedIn }: { context: VoiceContext; onFinalTranscript: (entry: VoiceTranscriptEntry) => void; accessToken?: string | null; signedIn?: boolean }) {
+  const voice = useRealtimeInterview({ context, onFinalTranscript, accessToken });
   const [consent, setConsent] = useState(false);
   const [muted, setMuted] = useState(false);
   const live = voice.status === "connected";
   const dropped = voice.status === "failed" || voice.status === "closed";
+
+  // On the static demo the token endpoint is a public Edge Function that spends
+  // real OpenAI credits, so it only mints secrets for a signed-in user. Show
+  // that plainly rather than hiding the feature.
+  if (voice.requiresSignIn && !signedIn) {
+    return (
+      <section className="mx-auto mb-5 max-w-5xl rounded-xl border border-[#bcd3c2] bg-[#f3faf4] p-4">
+        <p className="text-sm font-semibold text-[#315248]">Live voice interview</p>
+        <p className="mt-1 text-xs leading-5 text-slate-600">
+          Sign in to try voice mode. Voice runs a live speech-to-speech interview through OpenAI, so the hosted demo limits it to signed-in
+          users. Use <b>Sign in to save reports</b> in the header — the text interview below works either way.
+        </p>
+      </section>
+    );
+  }
 
   const turnHelp = voice.turn.interviewerSpeaking
     ? "The interviewer is speaking. Use Interrupt if you need to cut in."

@@ -5,17 +5,25 @@ import { RealtimeInterviewClient } from "@/lib/openai/realtime/client";
 import { userSafeRealtimeError } from "@/lib/openai/realtime/error";
 import { normalizeTranscriptText } from "@/lib/openai/realtime/events";
 import { applyVoiceTurnEvent, canFinishAnswer, initialVoiceTurnState, resetVoiceTurnAfterResponse } from "@/lib/openai/realtime/turn-state";
+import { requestRealtimeCredential, resolveTokenSource } from "@/lib/openai/realtime/token-endpoint";
 import type { NormalizedRealtimeEvent, RealtimeConnectionState } from "@/lib/openai/realtime/types";
 import type { VoiceTranscriptEntry } from "@/lib/schemas";
-import { withBasePath } from "@/lib/runtime-capabilities";
+import { hasServerFeatures, realtimeTokenUrl, withBasePath } from "@/lib/runtime-capabilities";
 
 type Options = {
   context: Record<string, unknown>;
   /** Receives finalized turns for persistence into the durable session. */
   onFinalTranscript?: (entry: VoiceTranscriptEntry) => void;
+  /** Supabase access token, required when the Edge Function mints the secret. */
+  accessToken?: string | null;
 };
 
-export function useRealtimeInterview({ context, onFinalTranscript }: Options) {
+export function useRealtimeInterview({ context, onFinalTranscript, accessToken }: Options) {
+  const tokenSource = resolveTokenSource({
+    hasServerFeatures,
+    routeUrl: withBasePath("/api/realtime/session"),
+    edgeFunctionUrl: realtimeTokenUrl,
+  });
   const client = useRef<RealtimeInterviewClient | null>(null);
   const id = useRef(crypto.randomUUID());
   const [status, setStatus] = useState<RealtimeConnectionState>("idle");
@@ -30,6 +38,9 @@ export function useRealtimeInterview({ context, onFinalTranscript }: Options) {
 
   const contextRef = useRef(context);
   useEffect(() => { contextRef.current = context; }, [context]);
+
+  const tokenRef = useRef(accessToken);
+  useEffect(() => { tokenRef.current = accessToken; }, [accessToken]);
 
   const close = useCallback(() => {
     client.current?.close();
@@ -81,21 +92,31 @@ export function useRealtimeInterview({ context, onFinalTranscript }: Options) {
   }, []);
 
   const start = useCallback(async () => {
-    if (client.current) return;
+    if (client.current || !tokenSource) return;
     setStatus("requesting-permission");
     setError(null);
     setTurn(initialVoiceTurnState);
+
+    const result = await requestRealtimeCredential({
+      source: tokenSource,
+      sessionId: id.current,
+      context: contextRef.current,
+      accessToken: tokenRef.current,
+    });
+    if (!result.ok) {
+      // Token failures already carry a candidate-safe message; the interview and
+      // text mode are untouched.
+      if (process.env.NODE_ENV === "development") console.warn("Realtime token request failed", result.reason);
+      setError(result.message);
+      setStatus("failed");
+      close();
+      return;
+    }
+
     try {
-      const response = await fetch(withBasePath("/api/realtime/session"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: id.current, ...contextRef.current }),
-      });
-      const credential = await response.json();
-      if (!response.ok) throw new Error(typeof credential.error === "string" ? credential.error : "Unable to start voice interview.");
       const next = new RealtimeInterviewClient(handleEvent, handleState);
       client.current = next;
-      await next.connect(credential);
+      await next.connect(result.credential);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "";
       if (process.env.NODE_ENV === "development") console.warn("Unable to start realtime interview", message);
@@ -103,13 +124,15 @@ export function useRealtimeInterview({ context, onFinalTranscript }: Options) {
       setStatus("failed");
       close();
     }
-  }, [close, handleEvent, handleState]);
+  }, [close, handleEvent, handleState, tokenSource]);
 
   return {
     status,
     error,
     partial,
     turn,
+    /** True when this build mints secrets via the public Edge Function. */
+    requiresSignIn: tokenSource?.requiresAuth === true,
     awaitingTurnEnd: canFinishAnswer(status, turn),
     canInterrupt: status === "connected" && turn.interviewerSpeaking && turn.responseActive,
     start,

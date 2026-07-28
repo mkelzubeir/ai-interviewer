@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { buildInterviewerInstructions } from "@/lib/openai/realtime/session-config";
+import { buildRealtimeSessionRequest } from "@/lib/openai/realtime/session-config";
 import { clientKey, createRateLimiter } from "@/lib/rate-limit";
 import { openAIEnv, serverEnv } from "@/lib/server-env";
 
@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
   try {
     const data = parsed.data;
     const client = new OpenAI({ apiKey: env.OPENAI_API_KEY, maxRetries: 1, timeout: env.OPENAI_REQUEST_TIMEOUT_MS });
-    const secret = await client.realtime.clientSecrets.create({ expires_after: { anchor: "created_at", seconds: 120 }, session: { type: "realtime", model: env.OPENAI_REALTIME_MODEL, output_modalities: ["audio"], max_output_tokens: 300, instructions: buildInterviewerInstructions(data), audio: { input: { transcription: { model: "gpt-4o-mini-transcribe", language: "en" }, turn_detection: { type: "server_vad", create_response: true, interrupt_response: true, prefix_padding_ms: 300, silence_duration_ms: 900 } }, output: { voice: env.OPENAI_REALTIME_VOICE } }, tracing: null } });
+    // Shared with the Supabase Edge Function so both mint identical sessions.
+    const sessionRequest = buildRealtimeSessionRequest(data, { model: env.OPENAI_REALTIME_MODEL, voice: env.OPENAI_REALTIME_VOICE });
+    const secret = await client.realtime.clientSecrets.create(sessionRequest as Parameters<typeof client.realtime.clientSecrets.create>[0]);
     // Only the short-lived client secret crosses to the browser; OPENAI_API_KEY never does.
     return NextResponse.json({ value: secret.value, expiresAt: secret.expires_at, model: env.OPENAI_REALTIME_MODEL, voice: env.OPENAI_REALTIME_VOICE }, { headers });
   } catch (error) {

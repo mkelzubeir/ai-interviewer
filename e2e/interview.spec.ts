@@ -86,6 +86,37 @@ test("practice never requires an account", async ({ page }) => {
   await expect(page.getByText(/Deterministic sample demonstration/)).toBeVisible();
 });
 
+test("voice mode on the static build asks signed-out users to sign in", async ({ page }) => {
+  await page.goto("interview");
+
+  // Voice needs the candidate's own materials plus consent — the sample fixture
+  // is documented as never reaching a provider.
+  await page.locator("#resume").fill("Operations manager who led an intake redesign across three teams.");
+  await page.locator("#job").fill("Strategic Projects Manager leading cross-functional initiatives.");
+
+  const consent = page.getByRole("checkbox");
+  if (await consent.count() === 0) {
+    // No provider mode is configured in this build, so there is nothing to consent to.
+    await page.getByRole("button", { name: /Start interview/ }).click();
+    await expect(page.getByText("Live voice interview")).toHaveCount(0);
+    return;
+  }
+
+  await consent.check();
+  await page.getByRole("button", { name: /Start interview/ }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+  // The panel must be present and explain itself, not silently disappear.
+  await expect(page.getByText("Live voice interview")).toBeVisible();
+  await expect(page.getByText(/Sign in to try voice mode/i)).toBeVisible();
+
+  // Signed out, no session is ever attempted — no microphone prompt, no token call.
+  await expect(page.getByRole("button", { name: /Start voice interview/ })).toHaveCount(0);
+
+  // Text mode is unaffected and still the way through the interview.
+  await expect(page.locator("#answer")).toBeEnabled();
+});
+
 test("completes a sample interview, recovers a mid-session refresh, and produces a report", async ({ page }) => {
   await startSampleInterview(page);
 

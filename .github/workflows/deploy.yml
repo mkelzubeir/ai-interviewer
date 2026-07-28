@@ -44,6 +44,10 @@ jobs:
           # they are unset the demo simply builds without sign-in.
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # Public Supabase Edge Function URL that mints Realtime client secrets.
+          # A URL, never a key — OPENAI_API_KEY lives only in Supabase secrets.
+          # Unset until the function is deployed, which simply leaves voice off.
+          NEXT_PUBLIC_REALTIME_TOKEN_URL: ${{ vars.NEXT_PUBLIC_REALTIME_TOKEN_URL }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

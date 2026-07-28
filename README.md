@@ -20,12 +20,16 @@ server-backed modes are absent there rather than broken.
 | Session recovery after a refresh | ✅ | ✅ |
 | Feedback report | ✅ | ✅ |
 | AI-adaptive questions (OpenAI) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
-| Live voice interview (Realtime) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
+| Live voice interview (Realtime) | ✅ signed in, via Edge Function | ✅ with `OPENAI_API_KEY` |
 | Sign in and save reports | ✅ | ✅ if Supabase is configured |
 
-On the static build the app detects that no server is present, hides the AI and
-voice controls, states why, and runs entirely on the local deterministic
-engine. `OPENAI_API_KEY` is never present in client code in any build.
+On the static build the app detects that no route handler is present and runs
+adaptive text turns on the local deterministic engine instead. Voice still
+works there, because client-secret minting moves to a Supabase Edge Function —
+see [Voice on the static demo](#voice-on-the-static-demo).
+
+`OPENAI_API_KEY` is never present in client code, build output, or any
+`NEXT_PUBLIC_` variable in any build.
 
 ## Run locally
 
@@ -50,6 +54,7 @@ Copy `.env.example` to `.env.local`. Every variable is optional.
 | `OPENAI_REQUEST_TIMEOUT_MS` | Default `15000`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Enables sign-in and saved reports. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable key; safe in the client bundle. |
+| `NEXT_PUBLIC_REALTIME_TOKEN_URL` | Edge Function URL enabling voice on a static build. A URL, not a key. |
 
 The environment is validated with Zod at request time. A malformed value
 disables the affected mode with a logged reason instead of failing a live
@@ -84,6 +89,61 @@ interview state are preserved, and you continue in text mode or retry.
 Use a current WebRTC-capable browser with a microphone. The automated suite
 mocks no live device or Realtime session; test a real microphone manually
 before relying on it.
+
+### Voice on the static demo
+
+GitHub Pages cannot run a route handler, so the deployed demo mints its client
+secret from a Supabase Edge Function instead. Everything after that is
+unchanged — the browser negotiates WebRTC directly with OpenAI using the
+ephemeral secret, exactly as it does locally.
+
+The token source is chosen at build time by
+`lib/openai/realtime/token-endpoint.ts`: a server build always prefers its own
+route (no sign-in needed, so local dev works with nothing but an API key), and
+a static build uses `NEXT_PUBLIC_REALTIME_TOKEN_URL`.
+
+Because that function is publicly reachable and spends real OpenAI credits, it:
+
+- **requires a signed-in user** — the JWT is verified server-side with
+  `auth.getUser()`, so the publishable key alone is rejected. Signed-out
+  visitors see a "sign in to try voice mode" panel rather than a hidden feature;
+- **rate limits per user** — 5 sessions per 10 minutes, enforced in Postgres via
+  `claim_voice_token`, because Edge Functions are stateless and an in-memory
+  counter would reset on every cold start;
+- **allows exactly two origins** — `https://mkelzubeir.github.io` and
+  `http://localhost:3000`. Any other origin gets no CORS headers at all.
+
+Session configuration (model, voice, server VAD timings, transcription) is
+shared by both callers from `supabase/functions/_shared/realtime-session.ts`,
+so the two paths cannot drift.
+
+#### Deploying the function
+
+```bash
+supabase login
+supabase link --project-ref <project-ref>
+
+# Secrets live in Supabase, never in the repo or a NEXT_PUBLIC_ variable.
+supabase secrets set OPENAI_API_KEY=sk-...
+supabase secrets set OPENAI_REALTIME_MODEL=gpt-realtime   # optional
+supabase secrets set OPENAI_REALTIME_VOICE=marin          # optional
+
+# Rate-limit table and the claim function.
+supabase db push          # or paste supabase/migrations/0002_*.sql into the SQL editor
+
+supabase functions deploy realtime-token
+```
+
+Then point the client at it — only after the function is live, so the demo
+never advertises a voice mode that 404s:
+
+```bash
+gh variable set NEXT_PUBLIC_REALTIME_TOKEN_URL \
+  --body 'https://<project-ref>.supabase.co/functions/v1/realtime-token'
+```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are
+injected into Edge Functions automatically; do not set them yourself.
 
 ## Accounts and saved reports (optional)
 
@@ -155,8 +215,11 @@ lib/server-env.ts                 Zod validation of server environment
 lib/openai-provider.ts            Responses API adapter with typed failures
 lib/rate-limit.ts                 per-key fixed-window limiter with eviction
 lib/openai/realtime/              Realtime client, event adapter, turn state
+  └ token-endpoint.ts             picks route handler vs Edge Function
 lib/supabase/                     browser client and saved-report row mapping
-supabase/migrations/              SQL schema and RLS policies
+supabase/functions/_shared/       session config + CORS, shared with Deno
+supabase/functions/realtime-token Edge Function that mints client secrets
+supabase/migrations/              SQL schema, RLS policies, voice quota
 e2e/                              Playwright specs against the static export
 ```
 

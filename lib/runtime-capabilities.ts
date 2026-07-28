@@ -18,5 +18,18 @@ export function withBasePath(path: string) {
   return `${basePath}${path}`;
 }
 
+/**
+ * Supabase Edge Function that mints Realtime client secrets, letting the static
+ * export run voice mode without a Next.js route. Empty when not configured.
+ * This is a public function URL, never a key.
+ */
+export const realtimeTokenUrl = process.env.NEXT_PUBLIC_REALTIME_TOKEN_URL ?? "";
+
+/** AI-adaptive text turns need the Next.js route; there is no static equivalent. */
+export const aiTurnsAvailable = hasServerFeatures;
+
+/** Voice works from either a route handler or the Edge Function. */
+export const voiceModeAvailable = hasServerFeatures || Boolean(realtimeTokenUrl);
+
 export const staticDemoNotice =
-  "This hosted demo is a static export with no server, so AI-adaptive questions and live voice are unavailable. Run the project locally with an OpenAI API key to enable them.";
+  "This hosted demo is a static export with no server, so AI-adaptive questions run on the local deterministic engine instead. Run the project locally with an OpenAI API key to enable adaptive questions.";
