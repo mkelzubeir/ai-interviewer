@@ -1,15 +1,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { withBasePath } from "@/lib/runtime-capabilities";
 
 /**
  * Browser-side Supabase access.
  *
  * Only the publishable anon key ever reaches this bundle — that is what it is
- * designed for. Row Level Security on `interview_sessions` is the actual
- * security boundary: the anon key by itself grants no access to any row.
+ * designed for. It exists solely to obtain an anonymous session, whose JWT the
+ * realtime-token Edge Function verifies before minting a client secret.
  *
- * Both variables are optional. With neither set the app runs exactly as it did
- * before Supabase existed: anonymous, local-only, localStorage for everything.
+ * Both variables are optional and unused by a local server build, which mints
+ * secrets through its own route handler.
  */
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -33,11 +32,3 @@ export function getSupabaseClient(): SupabaseClient | null {
   return client;
 }
 
-/**
- * Where the magic link returns to. Must be listed under Authentication →
- * URL Configuration → Redirect URLs in the Supabase dashboard, including the
- * /ai-interviewer subpath for the GitHub Pages deployment.
- */
-export function authRedirectUrl() {
-  return new URL(withBasePath("/interview"), window.location.origin).toString();
-}

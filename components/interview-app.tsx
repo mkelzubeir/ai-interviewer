@@ -3,88 +3,314 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { initialState, loadSession, reducer, saveSession } from "@/lib/interview-session";
-import { interviewer, sampleAnswers, sampleJobDescription, sampleResume } from "@/lib/sample-data";
+import { sampleJobDescription, sampleResume } from "@/lib/sample-data";
 import { extractResumePdfText } from "@/lib/pdf-text";
-import { aiTurnsAvailable, hasServerFeatures, staticDemoNotice, voiceModeAvailable, voiceRequiresSignIn, voiceUnavailableNotice, withBasePath } from "@/lib/runtime-capabilities";
-import { VoiceInterviewPanel } from "@/components/voice-interview-panel";
+import { voiceModeAvailable, voiceNeedsSession, voiceUnavailableNotice } from "@/lib/runtime-capabilities";
 import { VoiceInterviewStage } from "@/components/voice-interview-stage";
-import { VoiceSignInGate } from "@/components/voice-sign-in-gate";
-import { AccountPanel } from "@/components/account-panel";
-import { SaveReport } from "@/components/save-report";
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { useAnonymousSession } from "@/hooks/use-anonymous-session";
 import type { InterviewDuration, InterviewType, VoiceTranscriptEntry } from "@/lib/schemas";
 
-type Auth = ReturnType<typeof useSupabaseAuth>;
-
 const interviewTypes: { id: InterviewType; label: string; description: string }[] = [
-  { id: "recruiter", label: "Recruiter screen", description: "Motivation, fit, and career direction." }, { id: "behavioral", label: "Behavioral interview", description: "Stories about action, ownership, and learning." }, { id: "hiring-manager", label: "Hiring manager", description: "Judgment, collaboration, and how you operate." }, { id: "role-specific", label: "Role-specific", description: "Strategic Projects and Business Operations scenarios." }, { id: "mixed", label: "Mixed interview", description: "A balanced, realistic practice conversation." },
+  { id: "recruiter", label: "Recruiter screen", description: "Motivation, fit, and career direction." },
+  { id: "behavioral", label: "Behavioral interview", description: "Stories about action, ownership, and learning." },
+  { id: "hiring-manager", label: "Hiring manager", description: "Judgment, collaboration, and how you operate." },
+  { id: "role-specific", label: "Role-specific", description: "Scenarios drawn from the job description." },
+  { id: "mixed", label: "Mixed interview", description: "A balanced, realistic practice conversation." },
 ];
 
-function Header({ phase, auth }: { phase: string; auth: Auth }) { const index = phase === "setup" ? 0 : phase === "interview" ? 1 : 2; return <header className="border-b border-slate-200 bg-[#f7f7f4]"><div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8"><Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight"><span className="grid size-8 place-items-center rounded-lg bg-slate-950 text-xs text-white">ip</span><span className="hidden sm:block">interview practice</span></Link><div className="flex items-center gap-5"><ol className="flex gap-4 text-xs">{["Setup", "Interview", "Report"].map((label, i) => <li key={label} className={`flex items-center gap-2 ${i === index ? "font-semibold text-[#3f675b]" : "text-slate-400"}`}><span className={`grid size-5 place-items-center rounded-full text-[10px] ${i <= index ? "bg-[#dcebe0] text-[#315248]" : "bg-slate-200"}`}>{i + 1}</span><span className="hidden sm:inline">{label}</span></li>)}</ol><AccountPanel auth={auth} /></div></div></header>; }
-function Notice({ children }: { children: React.ReactNode }) { return <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{children}</div>; }
-function Button({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`rounded-full px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${className}`}>{children}</button>; }
+type Dispatch = React.Dispatch<Parameters<typeof reducer>[1]>;
+
+function Header({ phase }: { phase: string }) {
+  const index = phase === "setup" ? 0 : phase === "interview" ? 1 : 2;
+  return (
+    <header className="border-b border-slate-200 bg-[#f7f7f4]">
+      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+        <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
+          <span className="grid size-8 place-items-center rounded-lg bg-slate-950 text-xs text-white">ip</span>
+          <span className="hidden sm:block">interview practice</span>
+        </Link>
+        <ol className="flex gap-4 text-xs">
+          {["Setup", "Interview", "Report"].map((label, i) => (
+            <li key={label} className={`flex items-center gap-2 ${i === index ? "font-semibold text-[#3f675b]" : "text-slate-400"}`}>
+              <span className={`grid size-5 place-items-center rounded-full text-[10px] ${i <= index ? "bg-[#dcebe0] text-[#315248]" : "bg-slate-200"}`}>{i + 1}</span>
+              <span className="hidden sm:inline">{label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </header>
+  );
+}
+
+function Button({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button {...props} className={`rounded-full px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${className}`}>{children}</button>;
+}
 
 export function InterviewApp() {
-  const [state, dispatch] = useReducer(reducer, initialState); const [elapsed, setElapsed] = useState(0); const auth = useSupabaseAuth();
+  const [state, dispatch] = useReducer(reducer, initialState);
+  // Silent anonymous session: no sign-in step, but the Edge Function still gets
+  // a verifiable JWT and a user id to rate limit against.
+  const session = useAnonymousSession();
+
   useEffect(() => { dispatch({ type: "HYDRATE", session: loadSession() }); }, []);
   useEffect(() => { saveSession(state); }, [state]);
-  useEffect(() => { if (!state.startedAt || state.phase !== "interview") return; const tick = () => setElapsed(Math.floor((Date.now() - state.startedAt!) / 1000)); tick(); const timer = window.setInterval(tick, 1000); return () => window.clearInterval(timer); }, [state.phase, state.startedAt]);
-  // Voice needs a Realtime client secret from somewhere — a route handler locally,
-  // or the Supabase Edge Function on the static demo. Sample mode is documented as
-  // requiring no API key, and the session config carries resume and role summaries,
-  // so consent is still required.
-  const voiceAvailable = voiceModeAvailable && !state.sampleMode && state.aiConsent;
-  // Voice is the product: with no explicit choice recorded, an interview that
-  // *can* be spoken is spoken.
-  const mode = state.preferredMode ?? (voiceAvailable ? "voice" : "text");
-  const voiceFirst = voiceAvailable && mode === "voice";
-  const useTextMode = useCallback(() => dispatch({ type: "SET_MODE", mode: "text" }), []);
+
   const onFinalTranscript = useCallback((entry: VoiceTranscriptEntry) => dispatch({ type: "VOICE_TRANSCRIPT", entry }), []);
-  const voiceContext = useMemo(() => ({ interviewType: state.interviewType, roleSummary: state.jobDescription.slice(0, 800), candidateSummary: state.resume.slice(0, 800), competencies: state.competenciesNeedingEvidence, claims: state.claims.map((claim) => claim.text), remainingBudget: state.remainingBudget }), [state.interviewType, state.jobDescription, state.resume, state.competenciesNeedingEvidence, state.claims, state.remainingBudget]);
-  if (!state.hydrated) return <main className="grid min-h-screen place-items-center bg-[#f7f7f4]"><div className="text-center"><div className="mx-auto size-8 animate-spin rounded-full border-2 border-slate-200 border-t-[#3f675b]" /><p className="mt-4 text-sm text-slate-500">Restoring your interview…</p></div></main>;
-  return <main className="min-h-screen bg-[#f7f7f4] text-slate-950"><Header phase={state.phase} auth={auth} />{state.recovery && <Recovery dispatch={dispatch} />}{state.phase === "setup" && <Setup state={state} dispatch={dispatch} />}{state.phase === "interview" && (
-    voiceFirst && voiceRequiresSignIn && auth.status !== "signed-in"
-      // Voice is configured but this visitor is signed out: show that, not a text form.
-      ? <VoiceSignInGate onUseText={useTextMode} />
-      : voiceFirst
-        ? <VoiceInterviewStage context={voiceContext} transcript={state.voiceTranscript} onFinalTranscript={onFinalTranscript} onUseText={useTextMode} onEnd={() => dispatch({ type: "END" })} accessToken={auth.accessToken} />
-        : <>
-            {voiceAvailable && <VoiceInterviewPanel context={voiceContext} onFinalTranscript={onFinalTranscript} accessToken={auth.accessToken} signedIn={auth.status === "signed-in"} />}
-            {!voiceModeAvailable && !state.sampleMode && <p role="status" className="mx-auto mb-5 max-w-5xl rounded-xl border border-[#e6d3b8] bg-[#fdf7ed] px-4 py-3 text-sm leading-6 text-[#7a5a2e]">{voiceUnavailableNotice}</p>}
-            <LiveInterview key={state.currentQuestion?.id} state={state} elapsed={elapsed} dispatch={dispatch} />
-          </>
-  )}{state.phase === "report" && <Report state={state} dispatch={dispatch} auth={auth} />}</main>;
+  const voiceContext = useMemo(
+    () => ({
+      interviewType: state.interviewType,
+      roleSummary: state.jobDescription.slice(0, 800),
+      candidateSummary: state.resume.slice(0, 800),
+      competencies: [],
+      claims: [],
+      remainingBudget: Math.max(1, state.remainingBudget),
+    }),
+    [state.interviewType, state.jobDescription, state.resume, state.remainingBudget],
+  );
+
+  if (!state.hydrated) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f7f4]">
+        <div className="text-center">
+          <div className="mx-auto size-8 animate-spin rounded-full border-2 border-slate-200 border-t-[#3f675b]" />
+          <p className="mt-4 text-sm text-slate-500">Restoring your interview…</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f7f7f4] text-slate-950">
+      <Header phase={state.phase} />
+      {state.recovery && <Recovery dispatch={dispatch} />}
+      {state.phase === "setup" && <Setup state={state} dispatch={dispatch} session={session} />}
+      {state.phase === "interview" && (
+        <VoiceInterviewStage
+          context={voiceContext}
+          transcript={state.voiceTranscript}
+          onFinalTranscript={onFinalTranscript}
+          onEnd={() => dispatch({ type: "END" })}
+          getAccessToken={session.getAccessToken}
+        />
+      )}
+      {state.phase === "report" && <Report state={state} dispatch={dispatch} />}
+    </main>
+  );
 }
 
-function Recovery({ dispatch }: { dispatch: React.Dispatch<Parameters<typeof reducer>[1]> }) { return <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/35 p-5"><section role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Session found</p><h2 id="recovery-title" className="mt-3 text-2xl font-semibold tracking-tight">Resume your interview?</h2><p className="mt-3 text-sm leading-6 text-slate-600">Your setup, transcript, progress, and completed report are saved in this browser.</p><div className="mt-7 flex justify-end gap-3"><Button onClick={() => dispatch({ type: "DISCARD" })} className="border border-slate-300 bg-white text-slate-700">Start over</Button><Button autoFocus onClick={() => dispatch({ type: "RESUME" })} className="bg-slate-950 text-white">Resume interview</Button></div></section></div>; }
-
-function Setup({ state, dispatch }: { state: typeof initialState; dispatch: React.Dispatch<Parameters<typeof reducer>[1]> }) {
-  const set = (partial: Partial<{ resume: string; jobDescription: string; interviewType: InterviewType; duration: InterviewDuration; sampleMode: boolean }>) => dispatch({ type: "SET_SETUP", resume: partial.resume ?? state.resume, jobDescription: partial.jobDescription ?? state.jobDescription, interviewType: partial.interviewType ?? state.interviewType, duration: partial.duration ?? state.duration, sampleMode: partial.sampleMode ?? state.sampleMode });
-  const sample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 20, sampleMode: true });
-  // Mirrors the mode the interview will actually open in, so the CTA never
-  // promises a spoken interview the build or the consent state cannot deliver.
-  const willSpeak = voiceModeAvailable && !state.sampleMode && state.aiConsent && state.preferredMode !== "text";
-  return <section className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16"><div className="mx-auto max-w-2xl text-center"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Interview setup</p><h1 className="mt-4 text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Set the context. We’ll run the conversation.</h1><p className="mt-5 leading-7 text-slate-600">{voiceModeAvailable ? "Add your context, then talk it through with the interviewer. Text mode is available as a fallback at any point." : staticDemoNotice}</p>{!voiceModeAvailable && <p role="status" className="mx-auto mt-5 max-w-xl rounded-xl border border-[#e6d3b8] bg-[#fdf7ed] px-4 py-3 text-sm leading-6 text-[#7a5a2e]">{voiceUnavailableNotice}</p>}</div><div className="mx-auto mt-10 max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 sm:p-8"><div className="flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-semibold">Your interview brief</h2><p className="mt-1 text-sm text-slate-500">Everything is stored only in your local browser session.</p></div><Button onClick={sample} className="border border-[#bdd5c4] bg-[#edf6ef] text-[#315248]">Try sample interview</Button></div><div className="mt-7 grid gap-6"><Field label="Resume text" id="resume" value={state.resume} onChange={(value) => set({ resume: value, sampleMode: false })} placeholder="Paste your resume here…" /><Field label="Job description" id="job" value={state.jobDescription} onChange={(value) => set({ jobDescription: value, sampleMode: false })} placeholder="Paste the job description here…" /><div className="grid gap-6 md:grid-cols-[1fr_210px]"><fieldset><legend className="text-sm font-semibold">Interview type</legend><div className="mt-3 grid gap-2 sm:grid-cols-2">{interviewTypes.map((type) => <label key={type.id} className={`cursor-pointer rounded-xl border p-3 text-sm ${state.interviewType === type.id ? "border-[#6e9c7c] bg-[#edf6ef]" : "border-slate-200"}`}><input className="sr-only" type="radio" name="type" checked={state.interviewType === type.id} onChange={() => set({ interviewType: type.id })} /><span className="block font-semibold">{type.label}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{type.description}</span></label>)}</div></fieldset><fieldset><legend className="text-sm font-semibold">Interview duration</legend><div className="mt-3 space-y-2">{([10, 20, 30] as InterviewDuration[]).map((duration) => <label key={duration} className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-sm ${state.duration === duration ? "border-[#6e9c7c] bg-[#edf6ef] font-semibold" : "border-slate-200"}`}><span>{duration} minutes</span><input type="radio" name="duration" checked={state.duration === duration} onChange={() => set({ duration })} /></label>)}</div></fieldset></div></div>{(aiTurnsAvailable || voiceModeAvailable) && !state.sampleMode && <PrivacyNotice consent={state.aiConsent} onChange={(value) => dispatch({ type: "SET_AI_CONSENT", value })} />}{state.error && <Notice>{state.error}</Notice>}<div className="mt-8 flex items-center justify-between gap-4"><p className="text-xs text-slate-500">{state.sampleMode ? "Deterministic demonstration mode" : willSpeak ? "Voice interview · text fallback available" : "Written interview"}</p><Button onClick={() => dispatch({ type: "START" })} className="bg-slate-950 text-white">{willSpeak ? "Start voice interview →" : "Start interview →"}</Button></div></div></section>;
+function Recovery({ dispatch }: { dispatch: Dispatch }) {
+  return (
+    <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/35 p-5">
+      <section role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Session found</p>
+        <h2 id="recovery-title" className="mt-3 text-2xl font-semibold tracking-tight">Resume your interview?</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">Your setup, conversation and completed report are saved in this browser.</p>
+        <div className="mt-7 flex justify-end gap-3">
+          <Button onClick={() => dispatch({ type: "DISCARD" })} className="border border-slate-300 bg-white text-slate-700">Start over</Button>
+          <Button autoFocus onClick={() => dispatch({ type: "RESUME" })} className="bg-slate-950 text-white">Resume interview</Button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
-/**
- * Consent gate for the optional provider modes. Nothing leaves the browser until
- * this is checked: the adaptive-turn request carries the full resume and job
- * description, and the voice session config carries summaries of both.
- */
-function PrivacyNotice({ consent, onChange }: { consent: boolean; onChange: (value: boolean) => void }) {
-  // The static demo has no route handler, so adaptive text turns are unavailable
-  // there even though voice is. Describe only what this build can actually do.
-  const enables = aiTurnsAvailable && voiceModeAvailable ? "AI-adaptive questions and the live voice interview" : aiTurnsAvailable ? "AI-adaptive questions" : "the live voice interview";
-  return <div className="mt-7 rounded-xl border border-[#c9d8e6] bg-[#f2f7fb] p-4"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#33566f]">Before anything is sent</p><p className="mt-2 text-sm leading-6 text-slate-700">By default this interview runs entirely in your browser and your text is never transmitted. Opting in enables {enables}, which sends your <b>resume and job description</b> — and, for voice, microphone audio and summaries of both documents — to OpenAI. The OpenAI API key stays server-side and is never exposed to this page.</p><label className="mt-4 flex cursor-pointer items-start gap-3 text-sm"><input type="checkbox" checked={consent} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 size-4" /><span>Send my resume and job description to OpenAI for {enables}. <span className="block text-xs text-slate-500">Leave unchecked to stay fully local. You can practise either way.</span></span></label></div>;
-}
-function Field({ label, id, value, onChange, placeholder }: { label: string; id: string; value: string; onChange: (value: string) => void; placeholder: string }) { const [status, setStatus] = useState(""); const upload = async (file: File | undefined) => { if (!file) return; setStatus("Extracting text from your PDF…"); try { onChange(await extractResumePdfText(file)); setStatus(`${file.name} extracted locally. Review or edit the text below.`); } catch (error) { setStatus(error instanceof Error ? error.message : "We could not read that PDF."); } }; return <div><label htmlFor={id} className="text-sm font-semibold">{label} <span className="font-normal text-slate-400">(required)</span></label>{id === "resume" && <div className="mt-2 rounded-xl border border-dashed border-[#9ebda7] bg-[#f4faf5] p-3"><label htmlFor="resume-pdf" className="flex cursor-pointer items-center justify-between gap-4"><span className="text-xs leading-5 text-slate-600">Upload a PDF instead. Up to 5 MB; text is extracted locally.</span><span className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm">Choose PDF</span><input id="resume-pdf" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => upload(event.target.files?.[0])} /></label>{status && <p role="status" className="mt-2 text-xs text-[#315248]">{status}</p>}</div>}<textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 min-h-36 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 outline-none transition focus:border-[#6e9c7c] focus:bg-white focus:ring-4 focus:ring-[#dcebe0]" /></div>; }
+function Setup({ state, dispatch, session }: { state: typeof initialState; dispatch: Dispatch; session: ReturnType<typeof useAnonymousSession> }) {
+  const set = (partial: Partial<{ resume: string; jobDescription: string; interviewType: InterviewType; duration: InterviewDuration; sampleMode: boolean }>) =>
+    dispatch({
+      type: "SET_SETUP",
+      resume: partial.resume ?? state.resume,
+      jobDescription: partial.jobDescription ?? state.jobDescription,
+      interviewType: partial.interviewType ?? state.interviewType,
+      duration: partial.duration ?? state.duration,
+      sampleMode: partial.sampleMode ?? state.sampleMode,
+    });
 
-function LiveInterview({ state, elapsed, dispatch }: { state: typeof initialState; elapsed: number; dispatch: React.Dispatch<Parameters<typeof reducer>[1]> }) {
-  const [answer, setAnswer] = useState(""); const [confirmEnd, setConfirmEnd] = useState(false); const question = state.currentQuestion!; const submitted = state.transcript.at(-1)?.question.id === question.id;
-  const next = async (skip = false) => { if (!skip && answer.trim().length < 8) return dispatch({ type: "ERROR", message: "Write a brief answer or choose Skip question." }); dispatch({ type: "SET_LOADING", value: true }); if (skip) { dispatch({ type: "SKIP" }); window.setTimeout(() => { dispatch({ type: "SET_LOADING", value: false }); dispatch({ type: "ADVANCE" }); }, 350); return; } dispatch({ type: "ANSWER", answer }); if (state.sampleMode || !hasServerFeatures || !state.aiConsent) { window.setTimeout(() => { dispatch({ type: "SET_LOADING", value: false }); dispatch({ type: "ADVANCE" }); }, 350); return; } try { const transcript = [...state.transcript.map((entry) => ({ question: entry.question.prompt, answer: entry.answer, competency: entry.question.competency })), { question: question.prompt, answer, competency: question.competency }]; const response = await fetch(withBasePath("/api/interview/next"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resume: state.resume, jobDescription: state.jobDescription, interviewType: state.interviewType, remainingBudget: state.remainingBudget, transcript, topicsCovered: state.topicsCovered, claims: state.claims.map((claim) => claim.text) }) }); const turn = await response.json(); if (!response.ok) throw new Error(turn.error); dispatch({ type: "PROVIDER_TURN", turn }); } catch (error) { dispatch({ type: "ADVANCE" }); dispatch({ type: "ERROR", message: `${error instanceof Error ? error.message : "Provider unavailable"} Continuing with deterministic mode.` }); } finally { dispatch({ type: "SET_LOADING", value: false }); } };
-  const time = `${Math.floor(elapsed / 60).toString().padStart(2, "0")}:${(elapsed % 60).toString().padStart(2, "0")}`; const total = state.questionBudget; const progress = Math.min(100, Math.round((state.transcript.length / total) * 100));
-  return <section className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-10"><div className="mx-auto mb-6 flex max-w-5xl items-center gap-4 text-xs"><span className="font-semibold text-slate-600">{state.transcript.length + 1} of ~{total}</span><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-[#5b8b6d] transition-all" style={{ width: `${progress}%` }} /></div><span className="font-mono text-slate-500">{time}</span></div>{state.sampleMode && <p className="mx-auto mb-5 max-w-5xl rounded-lg bg-[#edf6ef] px-3 py-2 text-center text-xs text-[#315248]">Deterministic sample demonstration — questions adapt using visible local rules, not AI generation.</p>}<div className="mx-auto grid max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 lg:grid-cols-[255px_1fr]"><aside className="bg-[#edf4ee] p-6 lg:p-8"><span className="grid size-14 place-items-center rounded-full bg-[#3f675b] font-semibold text-white">{interviewer.initials}</span><h2 className="mt-5 font-semibold">{interviewer.name}</h2><p className="mt-1 text-sm text-slate-500">{interviewer.role}</p><p className="mt-8 border-t border-[#c7dccd] pt-5 text-xs leading-5 text-[#536c5a]">One question at a time. Your responses are saved locally.</p><div className="mt-8 hidden lg:block"><p className="text-xs font-bold uppercase tracking-[.14em] text-[#536c5a]">Transcript</p><ol className="mt-3 space-y-3">{state.transcript.slice(-3).map((entry, index) => <li key={`${entry.question.id}-${index}`} className="border-l border-[#a9c6b0] pl-3 text-xs leading-5 text-[#536c5a]"><b>{entry.question.competency}</b><br />{entry.answer ? entry.answer.slice(0, 70) + (entry.answer.length > 70 ? "…" : "") : "Skipped"}</li>)}</ol></div></aside><div className="p-6 sm:p-10"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">{question.kind === "follow-up" ? "Follow-up" : question.competency}</p><h1 className="mt-5 max-w-3xl text-3xl font-semibold leading-tight tracking-[-.04em] sm:text-4xl">{question.prompt}</h1><p className="mt-5 text-sm leading-6 text-slate-600">Take a moment. Be specific about the situation, your own role, and the evidence you had.</p><label htmlFor="answer" className="mt-8 block text-sm font-semibold">Your response</label><textarea id="answer" autoFocus disabled={submitted || state.loading} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Write your response here…" className="mt-2 min-h-52 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 outline-none focus:border-[#6e9c7c] focus:bg-white focus:ring-4 focus:ring-[#dcebe0] disabled:opacity-60" />{state.sampleMode && sampleAnswers[question.id] && <button type="button" onClick={() => setAnswer(sampleAnswers[question.id])} className="mt-3 text-xs font-semibold text-[#3f675b] underline underline-offset-4">Use deterministic demonstration response</button>}{state.error && <Notice>{state.error}</Notice>}<div className="mt-3 flex justify-between text-xs text-slate-400"><span>{answer.trim() ? `${answer.trim().split(/\s+/).length} words` : "Answer naturally; there is no score during the interview."}</span><span>Saved locally</span></div><div className="mt-8 flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><Button disabled={state.loading || submitted} onClick={() => next(true)} className="border border-slate-300 bg-white text-slate-700">Skip question</Button><Button onClick={() => setConfirmEnd(true)} className="text-slate-500 hover:text-slate-950">End interview</Button></div><Button disabled={state.loading || submitted} onClick={() => next()} className="bg-slate-950 text-white">{state.loading ? "Considering next question…" : "Submit answer →"}</Button></div></div></div>{confirmEnd && <div className="fixed inset-0 z-20 grid place-items-center bg-slate-950/35 p-5"><div role="dialog" aria-modal="true" aria-labelledby="end-title" className="w-full max-w-md rounded-2xl bg-white p-7 shadow-2xl"><h2 id="end-title" className="text-xl font-semibold">End interview early?</h2><p className="mt-3 text-sm leading-6 text-slate-600">You can still review a report from the answers you have provided.</p><div className="mt-6 flex justify-end gap-3"><Button onClick={() => setConfirmEnd(false)} className="border border-slate-300 bg-white text-slate-700">Keep going</Button><Button onClick={() => dispatch({ type: "END" })} className="bg-slate-950 text-white">End and view report</Button></div></div></div>}</section>;
+  const loadSample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 20, sampleMode: true });
+  // Never offer a Start that cannot mint a token: wait for the session when one is needed.
+  const blocked = !voiceModeAvailable || (voiceNeedsSession && session.status !== "ready");
+
+  return (
+    <section className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+      <div className="mx-auto max-w-2xl text-center">
+        <p className="inline-flex items-center gap-2 rounded-full border border-[#bdd5c4] bg-[#edf6ef] px-3 py-1 text-xs font-semibold uppercase tracking-[.16em] text-[#315248]">
+          <i aria-hidden="true" className="size-2 rounded-full bg-[#5b9a75]" /> Live voice interview
+        </p>
+        <h1 className="mt-5 text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Add your context, then start talking.</h1>
+        <p className="mt-5 leading-7 text-slate-600">Paste or upload your resume and the job description. The interviewer takes it from there.</p>
+      </div>
+
+      <div className="mx-auto mt-10 max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 sm:p-8">
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold">Your interview brief</h2>
+            <p className="mt-1 text-sm text-slate-500">Kept in this browser. Sent to OpenAI only to run the interview.</p>
+          </div>
+          <Button onClick={loadSample} className="border border-[#bdd5c4] bg-[#edf6ef] text-[#315248]">Use a sample brief</Button>
+        </div>
+
+        <div className="mt-7 grid gap-6">
+          <Field label="Resume" id="resume" value={state.resume} onChange={(value) => set({ resume: value, sampleMode: false })} placeholder="Paste your resume here…" />
+          <Field label="Job description" id="job" value={state.jobDescription} onChange={(value) => set({ jobDescription: value, sampleMode: false })} placeholder="Paste the job description here…" />
+
+          <div className="grid gap-6 md:grid-cols-[1fr_210px]">
+            <fieldset>
+              <legend className="text-sm font-semibold">Interview type</legend>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {interviewTypes.map((type) => (
+                  <label key={type.id} className={`cursor-pointer rounded-xl border p-3 text-sm ${state.interviewType === type.id ? "border-[#6e9c7c] bg-[#edf6ef]" : "border-slate-200"}`}>
+                    <input className="sr-only" type="radio" name="type" checked={state.interviewType === type.id} onChange={() => set({ interviewType: type.id })} />
+                    <span className="block font-semibold">{type.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{type.description}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend className="text-sm font-semibold">Length</legend>
+              <div className="mt-3 space-y-2">
+                {([10, 20, 30] as InterviewDuration[]).map((duration) => (
+                  <label key={duration} className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-sm ${state.duration === duration ? "border-[#6e9c7c] bg-[#edf6ef] font-semibold" : "border-slate-200"}`}>
+                    <span>{duration} minutes</span>
+                    <input type="radio" name="duration" checked={state.duration === duration} onChange={() => set({ duration })} />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        </div>
+
+        {/* Using the product means having the interview, so starting it is the
+            consent action. What that entails is stated plainly rather than
+            hidden behind a checkbox nobody reads. */}
+        <p className="mt-7 rounded-xl border border-[#c9d8e6] bg-[#f2f7fb] p-4 text-sm leading-6 text-slate-700">
+          Starting the interview sends your resume and job description, and your microphone audio, to OpenAI to run the
+          conversation. Raw audio is not intentionally retained by this app, and the OpenAI API key stays server-side —
+          it is never exposed to this page.
+        </p>
+
+        {!voiceModeAvailable && <p role="status" className="mt-4 rounded-xl border border-[#e6d3b8] bg-[#fdf7ed] px-4 py-3 text-sm leading-6 text-[#7a5a2e]">{voiceUnavailableNotice}</p>}
+        {voiceModeAvailable && session.status === "failed" && (
+          <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800">
+            {session.error} <button onClick={() => void session.retry()} className="font-semibold underline underline-offset-4">Try again</button>
+          </p>
+        )}
+        {state.error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{state.error}</p>}
+
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
+          <p className="text-xs text-slate-500">{voiceNeedsSession && session.status === "loading" ? "Preparing your session…" : "A microphone is required."}</p>
+          <Button onClick={() => dispatch({ type: "START" })} disabled={blocked} className="bg-slate-950 text-white">Start voice interview →</Button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
-function Report({ state, dispatch, auth }: { state: typeof initialState; dispatch: React.Dispatch<Parameters<typeof reducer>[1]>; auth: Auth }) { const report = state.completedReport!; return <section className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16"><div className="text-center"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Interview complete</p><h1 className="mt-4 text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Your practice report.</h1><p className="mx-auto mt-5 max-w-2xl leading-7 text-slate-600">Built from your local transcript. Missing evidence stays a placeholder instead of becoming an invented accomplishment.</p></div><div className="mt-10 grid gap-4 md:grid-cols-2"><article className="rounded-2xl bg-slate-950 p-7 text-white"><p className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Overall practice score</p><div className="mt-4 text-7xl font-semibold tracking-[-.07em]">{report.score || "—"}</div><p className="mt-4 text-sm text-slate-300">{report.readiness}</p></article><article className="rounded-2xl border border-slate-200 bg-white p-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Executive summary</p><p className="mt-4 text-sm leading-6 text-slate-700">{report.summary}</p><dl className="mt-5 grid gap-3 border-t border-slate-100 pt-5 text-sm"><div><dt className="text-slate-500">Strongest dimension</dt><dd className="mt-1 font-semibold">{report.strongestDimension}</dd></div><div><dt className="text-slate-500">Most important improvement</dt><dd className="mt-1 font-semibold">{report.improvementArea}</dd></div></dl></article><article className="rounded-2xl border border-slate-200 bg-white p-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Competency breakdown</p><div className="mt-5 space-y-4">{report.competencies.map((item) => <div key={item.label}><div className="mb-1 flex justify-between text-sm"><span>{item.label}</span><b>{item.score}</b></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-[#5b8b6d]" style={{ width: `${item.score}%` }} /></div></div>)}</div></article><article className="rounded-2xl border border-[#efd8cc] bg-[#fff7f3] p-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#a65339]">Likely interviewer concerns</p><ul className="mt-5 space-y-3 text-sm leading-6 text-slate-700">{report.concerns.map((item) => <li key={item}>• {item}</li>)}</ul><p className="mt-6 text-xs font-bold uppercase tracking-[.16em] text-[#a65339]">Best stories to prepare</p><ul className="mt-3 space-y-2 text-sm text-slate-700">{report.stories.map((item) => <li key={item}>• {item}</li>)}</ul></article></div><section className="mt-4 rounded-2xl border border-slate-200 bg-white p-7"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Three preparation actions</p><ol className="mt-5 grid gap-4 md:grid-cols-3">{report.actions.map((item, index) => <li key={item} className="rounded-xl bg-slate-50 p-4 text-sm leading-6"><b className="text-[#3f675b]">0{index + 1}</b><p className="mt-2">{item}</p></li>)}</ol></section><section className="mt-4 space-y-4"><h2 className="pt-5 text-2xl font-semibold tracking-tight">Question-by-question feedback</h2>{report.questions.map((item, index) => <article key={index} className="rounded-2xl border border-slate-200 bg-white p-6"><p className="text-sm font-semibold">{item.question}</p><div className="mt-4 grid gap-4 md:grid-cols-2"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-slate-400">Your answer</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.answer}</p></div><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#3f675b]">Better structure</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.structure}</p></div><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#3f675b]">What worked</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.worked}</p></div><div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#a65339]">What weakened it</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.weakened}</p></div></div><div className="mt-4 rounded-xl bg-[#edf6ef] p-4 text-sm leading-6 text-slate-700"><b>Improved example:</b> {item.improvedExample}</div></article>)}</section><SaveReport auth={auth} session={state} /><div className="mt-8 text-center"><Button onClick={() => dispatch({ type: "RESTART" })} className="border border-slate-300 bg-white text-slate-700">Start a new interview</Button></div></section>; }
+function Field({ label, id, value, onChange, placeholder }: { label: string; id: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  const [status, setStatus] = useState("");
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setStatus("Extracting text from your PDF…");
+    try {
+      onChange(await extractResumePdfText(file));
+      setStatus(`${file.name} extracted locally. Review or edit the text below.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "We could not read that PDF.");
+    }
+  };
+
+  return (
+    <div>
+      <label htmlFor={id} className="text-sm font-semibold">{label} <span className="font-normal text-slate-400">(required)</span></label>
+      <div className="mt-2 rounded-xl border border-dashed border-[#9ebda7] bg-[#f4faf5] p-3">
+        <label htmlFor={`${id}-pdf`} className="flex cursor-pointer items-center justify-between gap-4">
+          <span className="text-xs leading-5 text-slate-600">Upload a PDF instead. Up to 5 MB; text is extracted in your browser.</span>
+          <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm">Choose PDF</span>
+          <input id={`${id}-pdf`} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => upload(event.target.files?.[0])} />
+        </label>
+        {status && <p role="status" className="mt-2 text-xs text-[#315248]">{status}</p>}
+      </div>
+      <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 min-h-36 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 outline-none transition focus:border-[#6e9c7c] focus:bg-white focus:ring-4 focus:ring-[#dcebe0]" />
+    </div>
+  );
+}
+
+function Report({ state, dispatch }: { state: typeof initialState; dispatch: Dispatch }) {
+  const report = state.completedReport!;
+  return (
+    <section className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+      <div className="text-center">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Interview complete</p>
+        <h1 className="mt-4 text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Your practice report.</h1>
+        <p className="mx-auto mt-5 max-w-2xl leading-7 text-slate-600">Built from what you actually said. Missing evidence stays a placeholder instead of becoming an invented accomplishment.</p>
+      </div>
+
+      {!report.questions.length && (
+        <p role="status" className="mx-auto mt-8 max-w-2xl rounded-xl border border-[#e6d3b8] bg-[#fdf7ed] px-4 py-3 text-sm leading-6 text-[#7a5a2e]">
+          The interview ended before you answered anything, so there is nothing to give feedback on yet. Start again and talk through at least one question.
+        </p>
+      )}
+
+      <div className="mt-10 grid gap-4 md:grid-cols-2">
+        <article className="rounded-2xl bg-slate-950 p-7 text-white">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Overall practice score</p>
+          <div className="mt-4 text-7xl font-semibold tracking-[-.07em]">{report.score || "—"}</div>
+          <p className="mt-4 text-sm text-slate-300">{report.readiness}</p>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-7">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Executive summary</p>
+          <p className="mt-4 text-sm leading-6 text-slate-700">{report.summary}</p>
+          <dl className="mt-5 grid gap-3 border-t border-slate-100 pt-5 text-sm">
+            <div><dt className="text-slate-500">Strongest dimension</dt><dd className="mt-1 font-semibold">{report.strongestDimension}</dd></div>
+            <div><dt className="text-slate-500">Most important improvement</dt><dd className="mt-1 font-semibold">{report.improvementArea}</dd></div>
+          </dl>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-7">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Competency breakdown</p>
+          <div className="mt-5 space-y-4">
+            {report.competencies.map((item) => (
+              <div key={item.label}>
+                <div className="mb-1 flex justify-between text-sm"><span>{item.label}</span><b>{item.score}</b></div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-[#5b8b6d]" style={{ width: `${item.score}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="rounded-2xl border border-[#efd8cc] bg-[#fff7f3] p-7">
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-[#a65339]">Likely interviewer concerns</p>
+          <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-700">{report.concerns.map((item) => <li key={item}>• {item}</li>)}</ul>
+          <p className="mt-6 text-xs font-bold uppercase tracking-[.16em] text-[#a65339]">Best stories to prepare</p>
+          <ul className="mt-3 space-y-2 text-sm text-slate-700">{report.stories.map((item) => <li key={item}>• {item}</li>)}</ul>
+        </article>
+      </div>
+
+      <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-7">
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-[#3f675b]">Three preparation actions</p>
+        <ol className="mt-5 grid gap-4 md:grid-cols-3">
+          {report.actions.map((item, index) => <li key={item} className="rounded-xl bg-slate-50 p-4 text-sm leading-6"><b className="text-[#3f675b]">0{index + 1}</b><p className="mt-2">{item}</p></li>)}
+        </ol>
+      </section>
+
+      {report.questions.length > 0 && (
+        <section className="mt-4 space-y-4">
+          <h2 className="pt-5 text-2xl font-semibold tracking-tight">Question-by-question feedback</h2>
+          {report.questions.map((item, index) => (
+            <article key={index} className="rounded-2xl border border-slate-200 bg-white p-6">
+              <p className="text-sm font-semibold">{item.question}</p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div><p className="text-xs font-bold uppercase tracking-[.14em] text-slate-400">What you said</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.answer}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#3f675b]">Better structure</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.structure}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#3f675b]">What worked</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.worked}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#a65339]">What weakened it</p><p className="mt-2 text-sm leading-6 text-slate-700">{item.weakened}</p></div>
+              </div>
+              <div className="mt-4 rounded-xl bg-[#edf6ef] p-4 text-sm leading-6 text-slate-700"><b>Improved example:</b> {item.improvedExample}</div>
+            </article>
+          ))}
+        </section>
+      )}
+
+      <div className="mt-8 text-center">
+        <Button onClick={() => dispatch({ type: "RESTART" })} className="border border-slate-300 bg-white text-slate-700">Start a new interview</Button>
+      </div>
+    </section>
+  );
+}

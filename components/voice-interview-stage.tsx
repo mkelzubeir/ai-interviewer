@@ -25,33 +25,34 @@ const statusLabel: Record<string, string> = {
 };
 
 /**
- * The primary interview surface: a spoken conversation with the interviewer.
+ * The interview: a spoken conversation with the interviewer.
  *
- * Text remains reachable at all times via `onUseText` — it is the fallback, not
- * a parallel product. The durable transcript, recovery and report are shared
- * with text mode, so switching never loses the interview.
+ * Every finalized turn is merged into the durable session as it arrives, so a
+ * dropped connection, a refresh or an early end still yields a report from
+ * whatever was actually said.
  */
 export function VoiceInterviewStage({
   context,
   transcript,
   onFinalTranscript,
-  onUseText,
   onEnd,
-  accessToken,
+  getAccessToken,
 }: {
   context: VoiceContext;
   transcript: VoiceTranscriptEntry[];
   onFinalTranscript: (entry: VoiceTranscriptEntry) => void;
-  onUseText: () => void;
   onEnd: () => void;
-  accessToken?: string | null;
+  getAccessToken?: () => Promise<string | null>;
 }) {
-  const voice = useRealtimeInterview({ context, onFinalTranscript, accessToken });
+  const voice = useRealtimeInterview({ context, onFinalTranscript, getAccessToken });
   const [muted, setMuted] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const live = voice.status === "connected";
   const started = voice.status !== "idle";
   const ended = voice.status === "failed" || voice.status === "closed";
+  // A resumed interview must show what was already said, not hide it behind the
+  // start prompt.
+  const resuming = !started && transcript.length > 0;
 
   const speaking = voice.turn.interviewerSpeaking ? "Interviewer is speaking" : voice.turn.candidateSpeechActive ? "Listening to you" : live ? "Your turn — start speaking" : statusLabel[voice.status] ?? voice.status;
 
@@ -75,17 +76,17 @@ export function VoiceInterviewStage({
         <div className="min-h-64 px-6 py-7">
           {!started && (
             <div className="py-8 text-center">
-              <h1 className="text-2xl font-semibold tracking-[-.03em]">Ready for a spoken interview?</h1>
+              <h1 className="text-2xl font-semibold tracking-[-.03em]">{resuming ? "Pick up where you left off" : "Ready for a spoken interview?"}</h1>
               <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
                 Your browser will ask for microphone access. Speak naturally and pause when you are done — the interviewer takes its turn automatically.
               </p>
               <button onClick={() => void voice.start()} className="mt-7 rounded-full bg-[#315248] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#274238]">
-                Allow microphone &amp; begin
+                Allow microphone &amp; {resuming ? "continue" : "begin"}
               </button>
             </div>
           )}
 
-          {started && (
+          {(started || transcript.length > 0) && (
             <ol className="space-y-5">
               {transcript.map((entry) => (
                 <li key={entry.id} className={entry.speaker === "interviewer" ? "" : "pl-6 sm:pl-10"}>
@@ -110,7 +111,7 @@ export function VoiceInterviewStage({
           {voice.error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{voice.error}</p>}
           {ended && (
             <p aria-live="polite" className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
-              Voice has ended. Everything said so far is saved — retry voice, continue in text mode, or end and read your report.
+              Voice has ended. Everything said so far is saved — retry, or end and read your report.
             </p>
           )}
         </div>
@@ -131,9 +132,6 @@ export function VoiceInterviewStage({
                 Retry voice
               </button>
             ) : null}
-            <button onClick={onUseText} className="rounded-full px-4 py-2.5 text-xs font-semibold text-slate-500 underline underline-offset-4 hover:text-slate-900">
-              Switch to text mode
-            </button>
           </div>
           <button onClick={() => setConfirmEnd(true)} className="rounded-full bg-slate-950 px-5 py-2.5 text-xs font-semibold text-white">
             End &amp; get report

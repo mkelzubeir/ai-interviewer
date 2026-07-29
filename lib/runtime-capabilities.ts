@@ -2,15 +2,31 @@
  * Capability detection for builds that ship without a server.
  *
  * The GitHub Pages demo is a static export: there are no route handlers, so the
- * OpenAI Responses adapter and the Realtime client-secret endpoint do not exist.
- * Both values are inlined at build time by `next.config.ts`, so the client never
- * needs — and never receives — anything derived from OPENAI_API_KEY.
+ * Realtime client-secret endpoint does not exist in it. Minting moves to a
+ * Supabase Edge Function instead. Values are inlined at build time by
+ * `next.config.ts`, so the client never needs — and never receives — anything
+ * derived from OPENAI_API_KEY.
  */
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /** True when route handlers are part of this build (local dev and `next start`). */
 export const hasServerFeatures = process.env.NEXT_PUBLIC_SERVER_FEATURES !== "disabled";
+
+/**
+ * Supabase Edge Function that mints Realtime client secrets, which is how voice
+ * runs on the static export. A public function URL, never a key.
+ */
+export const realtimeTokenUrl = process.env.NEXT_PUBLIC_REALTIME_TOKEN_URL ?? "";
+
+/** Voice works from either a route handler or the Edge Function. */
+export const voiceModeAvailable = hasServerFeatures || Boolean(realtimeTokenUrl);
+
+/**
+ * True when the only token source is the public Edge Function, which mints
+ * secrets for an authenticated user only. A local server build needs no session.
+ */
+export const voiceNeedsSession = !hasServerFeatures && Boolean(realtimeTokenUrl);
 
 /** Prefix a same-origin path with the deployment basePath. */
 export function withBasePath(path: string) {
@@ -19,31 +35,8 @@ export function withBasePath(path: string) {
 }
 
 /**
- * Supabase Edge Function that mints Realtime client secrets, letting the static
- * export run voice mode without a Next.js route. Empty when not configured.
- * This is a public function URL, never a key.
- */
-export const realtimeTokenUrl = process.env.NEXT_PUBLIC_REALTIME_TOKEN_URL ?? "";
-
-/** AI-adaptive text turns need the Next.js route; there is no static equivalent. */
-export const aiTurnsAvailable = hasServerFeatures;
-
-/** Voice works from either a route handler or the Edge Function. */
-export const voiceModeAvailable = hasServerFeatures || Boolean(realtimeTokenUrl);
-
-/**
- * True when the only token source is the public Edge Function, which mints
- * secrets for signed-in users only. A local server build needs no account.
- */
-export const voiceRequiresSignIn = !hasServerFeatures && Boolean(realtimeTokenUrl);
-
-export const staticDemoNotice =
-  "This hosted demo is a static export with no server, so AI-adaptive questions run on the local deterministic engine instead. Run the project locally with an OpenAI API key to enable adaptive questions.";
-
-/**
- * Shown when the app leads with the spoken interview but this deployment cannot
- * actually start one. Silently handing someone a text form after promising
- * voice is worse than saying plainly that voice is not wired up here.
+ * Shown when this deployment cannot start a spoken interview at all. The app is
+ * voice-only, so this is a hard stop rather than a quiet downgrade.
  */
 export const voiceUnavailableNotice =
-  "Voice mode is not configured on this deployment yet, so this will be a written interview. The questions, follow-ups and feedback report are exactly the same.";
+  "Voice mode is not configured on this deployment. Run the project locally with an OpenAI API key, or set NEXT_PUBLIC_REALTIME_TOKEN_URL to a deployed realtime-token function.";

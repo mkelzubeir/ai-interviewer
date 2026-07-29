@@ -14,11 +14,11 @@ type Options = {
   context: Record<string, unknown>;
   /** Receives finalized turns for persistence into the durable session. */
   onFinalTranscript?: (entry: VoiceTranscriptEntry) => void;
-  /** Supabase access token, required when the Edge Function mints the secret. */
-  accessToken?: string | null;
+  /** Resolves the Supabase access token the Edge Function requires. */
+  getAccessToken?: () => Promise<string | null>;
 };
 
-export function useRealtimeInterview({ context, onFinalTranscript, accessToken }: Options) {
+export function useRealtimeInterview({ context, onFinalTranscript, getAccessToken }: Options) {
   const tokenSource = resolveTokenSource({
     hasServerFeatures,
     routeUrl: withBasePath("/api/realtime/session"),
@@ -39,8 +39,8 @@ export function useRealtimeInterview({ context, onFinalTranscript, accessToken }
   const contextRef = useRef(context);
   useEffect(() => { contextRef.current = context; }, [context]);
 
-  const tokenRef = useRef(accessToken);
-  useEffect(() => { tokenRef.current = accessToken; }, [accessToken]);
+  const tokenRef = useRef(getAccessToken);
+  useEffect(() => { tokenRef.current = getAccessToken; }, [getAccessToken]);
 
   const close = useCallback(() => {
     client.current?.close();
@@ -52,9 +52,8 @@ export function useRealtimeInterview({ context, onFinalTranscript, accessToken }
   const handleState = useCallback((next: RealtimeConnectionState) => {
     setStatus(next);
     // A dropped or closed session must release the client, otherwise `start`
-    // short-circuits on the stale ref and voice can never be retried. The
-    // interview itself is untouched: transcript entries already merged into the
-    // session persist, and text mode stays available throughout.
+    // short-circuits on the stale ref and voice can never be retried. Turns
+    // already merged into the durable session are untouched.
     if (next === "failed" || next === "closed") {
       client.current?.close();
       client.current = null;
@@ -101,11 +100,11 @@ export function useRealtimeInterview({ context, onFinalTranscript, accessToken }
       source: tokenSource,
       sessionId: id.current,
       context: contextRef.current,
-      accessToken: tokenRef.current,
+      accessToken: (await tokenRef.current?.()) ?? null,
     });
     if (!result.ok) {
-      // Token failures already carry a candidate-safe message; the interview and
-      // text mode are untouched.
+      // Token failures already carry a candidate-safe message; whatever has
+      // already been said stays in the session.
       if (process.env.NODE_ENV === "development") console.warn("Realtime token request failed", result.reason);
       setError(result.message);
       setStatus("failed");
@@ -132,7 +131,7 @@ export function useRealtimeInterview({ context, onFinalTranscript, accessToken }
     partial,
     turn,
     /** True when this build mints secrets via the public Edge Function. */
-    requiresSignIn: tokenSource?.requiresAuth === true,
+    needsSession: tokenSource?.requiresAuth === true,
     awaitingTurnEnd: canFinishAnswer(status, turn),
     canInterrupt: status === "connected" && turn.interviewerSpeaking && turn.responseActive,
     start,

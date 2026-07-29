@@ -1,3 +1,7 @@
+-- LEGACY: saved reports were removed along with accounts. This table is no
+-- longer read or written by the app and can be dropped. Kept because it has
+-- already been applied.
+
 -- Completed interview reports, one row per finished practice session.
 --
 -- Row Level Security is the security boundary for this app: the browser ships

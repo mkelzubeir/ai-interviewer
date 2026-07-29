@@ -18,9 +18,3 @@ Meridian Works is seeking a Strategic Projects Manager to lead ambiguous, cross-
 We value structured judgment, measurable impact, strong communication, and the ability to navigate tradeoffs across Operations, Finance, Product, and regional teams.`;
 
 export const interviewer = { name: "Elena Ortiz", role: "Director, Strategic Operations", initials: "EO" };
-export const sampleAnswers: Record<string, string> = {
-  "opening-strategic": "I am interested in this role because I enjoy turning ambiguous operational problems into a shared plan. At Harborline, I have worked across Operations, Finance, and Product to make priorities clearer and help teams move from analysis into action.",
-  "resume-prioritization": "I built an intake process after teams were bringing overlapping requests into planning. I mapped the requests with partners in Operations, Finance, and Product, then created shared criteria for urgency and expected value. The process reduced duplicate requests by 28%.",
-  "motivation-meridian": "Meridian's focus on ambiguous cross-functional work fits the parts of my current role where I have been most useful: framing a problem, bringing the right people together, and creating an operating rhythm that keeps decisions moving.",
-  "behavioral-alignment": "During a service-quality program, regional teams had different views on how quickly to change the process. I gathered the concerns, proposed a phased rollout across three regions, and set regular reviews so we could adjust based on what we learned.",
-};
