@@ -31,5 +31,11 @@ export const aiTurnsAvailable = hasServerFeatures;
 /** Voice works from either a route handler or the Edge Function. */
 export const voiceModeAvailable = hasServerFeatures || Boolean(realtimeTokenUrl);
 
+/**
+ * True when the only token source is the public Edge Function, which mints
+ * secrets for signed-in users only. A local server build needs no account.
+ */
+export const voiceRequiresSignIn = !hasServerFeatures && Boolean(realtimeTokenUrl);
+
 export const staticDemoNotice =
   "This hosted demo is a static export with no server, so AI-adaptive questions run on the local deterministic engine instead. Run the project locally with an OpenAI API key to enable adaptive questions.";

@@ -19,11 +19,21 @@ const sessionCoreShape = {
   startedAt: z.number().nullable(), questionBudget: z.number().int().positive(), questionsAsked: z.array(questionSchema), transcript: z.array(transcriptEntrySchema), topicsCovered: z.array(z.string()), competenciesTested: z.array(z.string()), competenciesNeedingEvidence: z.array(z.string()), claims: z.array(claimSchema), followUpDepth: z.number().int().nonnegative(), remainingBudget: z.number().int().nonnegative(), potentialStrengths: z.array(z.string()), potentialConcerns: z.array(z.string()), currentQuestion: questionSchema.nullable(), completedReport: reportSchema.nullable(),
 };
 
+export const interviewModeSchema = z.enum(["voice", "text"]);
+
 /** Sessions written before AI consent and durable voice transcripts existed. */
 export const sessionSchemaV2 = z.object({ version: z.literal(2), ...sessionCoreShape });
 
-export const sessionSchema = z.object({
+/** Sessions written before the interview had a voice/text mode preference. */
+export const sessionSchemaV3 = z.object({
   version: z.literal(3),
+  ...sessionCoreShape,
+  aiConsent: z.boolean(),
+  voiceTranscript: z.array(voiceTranscriptEntrySchema),
+});
+
+export const sessionSchema = z.object({
+  version: z.literal(4),
   ...sessionCoreShape,
   /**
    * Explicit opt-in to sending resume and job-description text to OpenAI.
@@ -31,6 +41,12 @@ export const sessionSchema = z.object({
    */
   aiConsent: z.boolean(),
   voiceTranscript: z.array(voiceTranscriptEntrySchema),
+  /**
+   * The candidate's explicit mode choice. Null means "whatever this build can
+   * offer", which is voice when a token endpoint is configured and they are
+   * signed in. Persisted so recovery restores the same experience.
+   */
+  preferredMode: interviewModeSchema.nullable(),
 });
 
 export type InterviewType = z.infer<typeof interviewTypeSchema>;
@@ -42,13 +58,29 @@ export type InterviewDecision = z.infer<typeof decisionSchema>;
 export type InterviewReport = z.infer<typeof reportSchema>;
 export type StoredSession = z.infer<typeof sessionSchema>;
 export type VoiceTranscriptEntry = z.infer<typeof voiceTranscriptEntrySchema>;
+export type InterviewMode = z.infer<typeof interviewModeSchema>;
 
-/** Upgrade a v2 session in place: consent defaults to off, voice history starts empty. */
+/**
+ * Upgrade a stored session to the current version.
+ *
+ * Applied in layers so an interview in progress survives an app update rather
+ * than being silently discarded. New capabilities always default to off.
+ */
 export function migrateSession(raw: unknown): StoredSession | null {
   const current = sessionSchema.safeParse(raw);
   if (current.success) return current.data;
-  const legacy = sessionSchemaV2.safeParse(raw);
-  if (!legacy.success) return null;
-  const { version: _version, ...rest } = legacy.data;
-  return { version: 3, ...rest, aiConsent: false, voiceTranscript: [] };
+
+  const v3 = sessionSchemaV3.safeParse(raw);
+  if (v3.success) {
+    const { version: _version, ...rest } = v3.data;
+    return { version: 4, ...rest, preferredMode: null };
+  }
+
+  const v2 = sessionSchemaV2.safeParse(raw);
+  if (v2.success) {
+    const { version: _version, ...rest } = v2.data;
+    return { version: 4, ...rest, aiConsent: false, voiceTranscript: [], preferredMode: null };
+  }
+
+  return null;
 }

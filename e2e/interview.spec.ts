@@ -41,21 +41,26 @@ test("serves the whole app under the /ai-interviewer subpath", async ({ page }) 
 
   await page.goto("./");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Practice the interview");
+  // Voice is the product: the landing page must lead with it.
+  await expect(page.getByText("Live voice interview").first()).toBeVisible();
+  await expect(page.getByText(/text-only/i)).toHaveCount(0);
+  await expect(page.getByText(/no microphone needed/i)).toHaveCount(0);
 
-  await page.getByRole("link", { name: /Begin a mock interview/ }).click();
+  await page.getByRole("link", { name: /Start a voice interview/ }).click();
   await expect(page).toHaveURL(/\/ai-interviewer\/interview\/?$/);
   await expect(page.getByRole("heading", { name: /Set the context/ })).toBeVisible();
 
   expect(failedRequests, "no asset should 404 under the subpath").toEqual([]);
 });
 
-test("the static demo hides server-only modes and defaults to the local engine", async ({ page }) => {
-  await page.goto("interview");
-  await expect(page.getByText(/static export with no server/)).toBeVisible();
-
+test("sample mode never reaches a provider", async ({ page }) => {
   await startSampleInterview(page);
-  // Voice needs a Realtime client secret from a server that the export does not have.
+
+  // The sample fixture is documented as needing no API key, so it must run on
+  // the local engine with no voice session and no consent to opt into.
   await expect(page.getByText("Live voice interview")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Allow microphone/ })).toHaveCount(0);
+  await expect(page.locator("#answer")).toBeEnabled();
 });
 
 test("practice never requires an account", async ({ page }) => {
@@ -103,17 +108,21 @@ test("voice mode on the static build asks signed-out users to sign in", async ({
   }
 
   await consent.check();
-  await page.getByRole("button", { name: /Start interview/ }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-  // The panel must be present and explain itself, not silently disappear.
-  await expect(page.getByText("Live voice interview")).toBeVisible();
-  await expect(page.getByText(/Sign in to try voice mode/i)).toBeVisible();
+  // With voice configured, the primary action is the spoken interview.
+  const start = page.getByRole("button", { name: /Start voice interview/ });
+  await expect(start).toBeVisible();
+  await start.click();
 
-  // Signed out, no session is ever attempted — no microphone prompt, no token call.
-  await expect(page.getByRole("button", { name: /Start voice interview/ })).toHaveCount(0);
+  // Signed out, the interview opens on the sign-in state — not a text form.
+  await expect(page.getByRole("heading", { name: /Sign in to start a voice interview/i })).toBeVisible();
+  await expect(page.locator("#answer")).toHaveCount(0);
 
-  // Text mode is unaffected and still the way through the interview.
+  // No session is ever attempted signed out: no microphone prompt, no token call.
+  await expect(page.getByRole("button", { name: /Allow microphone/ })).toHaveCount(0);
+
+  // Text remains reachable as the documented fallback.
+  await page.getByRole("button", { name: /Continue in text mode instead/i }).click();
   await expect(page.locator("#answer")).toBeEnabled();
 });
 

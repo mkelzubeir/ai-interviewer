@@ -1,15 +1,20 @@
 # AI Interviewer
 
-A mock interview practice tool. Bring a resume and a job description, answer
-one question at a time, and get an evidence-based feedback report built from
-your own transcript — not from invented achievements.
+Practice interviews **out loud**. Bring a resume and a job description, have a
+real spoken conversation with an AI interviewer over OpenAI Realtime, and get
+an evidence-based feedback report built from what you actually said — not from
+invented achievements.
+
+Voice is the primary experience. A written interview is available as a fallback
+throughout: same engine, same report, no account or microphone required.
 
 **Live demo: https://mkelzubeir.github.io/ai-interviewer/**
 
 ## What works where
 
-The demo is a static export on GitHub Pages. It has no server, so the two
-server-backed modes are absent there rather than broken.
+The demo is a static export on GitHub Pages. It has no server, so anything
+needing a route handler is absent there rather than broken. Voice is the
+exception: its one server-side step moves to a Supabase Edge Function.
 
 | | Live demo | Local (`npm run dev`) |
 |---|---|---|
@@ -20,13 +25,13 @@ server-backed modes are absent there rather than broken.
 | Session recovery after a refresh | ✅ | ✅ |
 | Feedback report | ✅ | ✅ |
 | AI-adaptive questions (OpenAI) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
-| Live voice interview (Realtime) | ✅ signed in, via Edge Function | ✅ with `OPENAI_API_KEY` |
+| Live voice interview (Realtime) | Requires the Edge Function deployed and `NEXT_PUBLIC_REALTIME_TOKEN_URL` set — see below | ✅ with `OPENAI_API_KEY` |
 | Sign in and save reports | ✅ | ✅ if Supabase is configured |
 
 On the static build the app detects that no route handler is present and runs
-adaptive text turns on the local deterministic engine instead. Voice still
-works there, because client-secret minting moves to a Supabase Edge Function —
-see [Voice on the static demo](#voice-on-the-static-demo).
+adaptive text turns on the local deterministic engine instead. Voice can still
+run there once the Edge Function is deployed, because client-secret minting
+moves to it — see [Voice on the static demo](#voice-on-the-static-demo).
 
 `OPENAI_API_KEY` is never present in client code, build output, or any
 `NEXT_PUBLIC_` variable in any build.
@@ -64,8 +69,8 @@ interview — the deterministic engine always keeps working.
 
 By default nothing leaves your browser. The setup screen carries an explicit,
 unchecked-by-default opt-in; only after you check it does your resume and job
-description get sent to OpenAI to choose the next question, and only then does
-the voice panel appear. Sample mode can never opt in.
+description get sent to OpenAI, and only then can the spoken interview start.
+Sample mode can never opt in.
 
 Voice sends microphone audio to OpenAI for live processing. The app does not
 intentionally retain raw audio. Realtime transcription is an aid and may differ
@@ -73,11 +78,11 @@ from what the model heard.
 
 ## Voice (Realtime WebRTC)
 
-The interview page includes an opt-in voice panel when a key is configured and
-you have consented. It requests microphone permission only after an explicit
+Once a key is configured and you have consented, the interview opens in voice
+mode by default. It requests microphone permission only after an explicit
 action, obtains a short-lived Realtime client secret from the server, and
 negotiates WebRTC directly with OpenAI. The browser never receives
-`OPENAI_API_KEY`.
+`OPENAI_API_KEY`. "Switch to text mode" is available at every point.
 
 Server VAD owns turn-taking: it decides when your answer has ended. There is
 deliberately **no** manual "I'm done answering" control — over a WebRTC media
@@ -91,6 +96,10 @@ mocks no live device or Realtime session; test a real microphone manually
 before relying on it.
 
 ### Voice on the static demo
+
+> **Status:** the Edge Function is written and unit-tested but is not deployed
+> yet. Until the checklist below is completed, `NEXT_PUBLIC_REALTIME_TOKEN_URL`
+> is unset and the deployed demo runs the written interview only.
 
 GitHub Pages cannot run a route handler, so the deployed demo mints its client
 secret from a Supabase Edge Function instead. Everything after that is
@@ -106,7 +115,8 @@ Because that function is publicly reachable and spends real OpenAI credits, it:
 
 - **requires a signed-in user** — the JWT is verified server-side with
   `auth.getUser()`, so the publishable key alone is rejected. Signed-out
-  visitors see a "sign in to try voice mode" panel rather than a hidden feature;
+  visitors get a "sign in to start a voice interview" screen — not a text form —
+  with text mode one click away;
 - **rate limits per user** — 5 sessions per 10 minutes, enforced in Postgres via
   `claim_voice_token`, because Edge Functions are stateless and an in-memory
   counter would reset on every cold start;
@@ -116,6 +126,11 @@ Because that function is publicly reachable and spends real OpenAI credits, it:
 Session configuration (model, voice, server VAD timings, transcription) is
 shared by both callers from `supabase/functions/_shared/realtime-session.ts`,
 so the two paths cannot drift.
+
+A spoken interview has no typed answers, so `lib/voice-transcript.ts` pairs each
+interviewer utterance with the answer that follows it and feeds that to the
+same report generator. Voice and text therefore produce the same kind of
+feedback from the same code path.
 
 #### Deploying the function
 
@@ -216,6 +231,7 @@ lib/openai-provider.ts            Responses API adapter with typed failures
 lib/rate-limit.ts                 per-key fixed-window limiter with eviction
 lib/openai/realtime/              Realtime client, event adapter, turn state
   └ token-endpoint.ts             picks route handler vs Edge Function
+lib/voice-transcript.ts           pairs a spoken conversation into report turns
 lib/supabase/                     browser client and saved-report row mapping
 supabase/functions/_shared/       session config + CORS, shared with Deno
 supabase/functions/realtime-token Edge Function that mints client secrets

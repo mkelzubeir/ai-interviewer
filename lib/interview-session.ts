@@ -1,7 +1,8 @@
 import { createReport } from "./report";
 import { budgetForDuration, decideNext, extractClaims, firstQuestion } from "./interview-engine";
 import { mergeFinalTranscript } from "./openai/realtime/events";
-import { migrateSession, type InterviewDuration, type InterviewType, type StoredSession, type VoiceTranscriptEntry } from "./schemas";
+import { transcriptForReport } from "./voice-transcript";
+import { migrateSession, type InterviewDuration, type InterviewMode, type InterviewType, type StoredSession, type VoiceTranscriptEntry } from "./schemas";
 import type { ProviderResponse } from "./openai-provider";
 
 export type AppState = StoredSession & { hydrated: boolean; recovery: StoredSession | null; error: string | null; loading: boolean };
@@ -10,9 +11,10 @@ export type Action =
   | { type: "RESUME" } | { type: "DISCARD" }
   | { type: "SET_SETUP"; resume: string; jobDescription: string; interviewType: InterviewType; duration: InterviewDuration; sampleMode?: boolean }
   | { type: "SET_AI_CONSENT"; value: boolean }
+  | { type: "SET_MODE"; mode: InterviewMode }
   | { type: "START" } | { type: "ANSWER"; answer: string } | { type: "SKIP" } | { type: "ADVANCE" } | { type: "PROVIDER_TURN"; turn: ProviderResponse } | { type: "VOICE_TRANSCRIPT"; entry: VoiceTranscriptEntry } | { type: "END" } | { type: "SET_LOADING"; value: boolean } | { type: "ERROR"; message: string | null } | { type: "RESTART" };
 
-export const emptySession: StoredSession = { version: 3, phase: "setup", sampleMode: false, resume: "", jobDescription: "", interviewType: "mixed", duration: 20, startedAt: null, questionBudget: 7, questionsAsked: [], transcript: [], topicsCovered: [], competenciesTested: [], competenciesNeedingEvidence: [], claims: [], followUpDepth: 0, remainingBudget: 7, potentialStrengths: [], potentialConcerns: [], currentQuestion: null, completedReport: null, aiConsent: false, voiceTranscript: [] };
+export const emptySession: StoredSession = { version: 4, phase: "setup", sampleMode: false, resume: "", jobDescription: "", interviewType: "mixed", duration: 20, startedAt: null, questionBudget: 7, questionsAsked: [], transcript: [], topicsCovered: [], competenciesTested: [], competenciesNeedingEvidence: [], claims: [], followUpDepth: 0, remainingBudget: 7, potentialStrengths: [], potentialConcerns: [], currentQuestion: null, completedReport: null, aiConsent: false, voiceTranscript: [], preferredMode: null };
 export const initialState: AppState = { ...emptySession, hydrated: false, recovery: null, error: null, loading: false };
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -29,6 +31,7 @@ export function reducer(state: AppState, action: Action): AppState {
     // Consent is only meaningful for the candidate's own materials; the sample
     // fixture never reaches a provider.
     case "SET_AI_CONSENT": return { ...state, aiConsent: action.value && !state.sampleMode, error: null };
+    case "SET_MODE": return { ...state, preferredMode: action.mode, error: null };
     case "START": {
       if (!state.resume.trim() || !state.jobDescription.trim()) return { ...state, error: "Add both a resume and job description, or choose the sample interview." };
       const budget = budgetForDuration(state.duration); const question = firstQuestion(state.interviewType, state.sampleMode);
@@ -39,7 +42,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "ADVANCE": return advance(state);
     case "PROVIDER_TURN": return applyProviderTurn(state, action.turn);
     case "VOICE_TRANSCRIPT": return { ...state, voiceTranscript: mergeFinalTranscript(state.voiceTranscript, action.entry) };
-    case "END": { const completed = { ...state, phase: "report" as const, currentQuestion: null }; return { ...completed, completedReport: createReport(completed) }; }
+    case "END": return finish({ ...state, currentQuestion: null });
     case "SET_LOADING": return { ...state, loading: action.value };
     case "ERROR": return { ...state, error: action.message, loading: false };
     case "RESTART": return { ...emptySession, hydrated: true, recovery: null, error: null, loading: false };
@@ -71,7 +74,9 @@ function absorbLatestAnswer(state: AppState) {
 
 function finish(state: AppState): AppState {
   const completed = { ...state, phase: "report" as const, currentQuestion: null };
-  return { ...completed, completedReport: createReport(completed) };
+  // A voice-only interview has no typed answers, so the report is generated
+  // from the paired spoken conversation instead of an empty transcript.
+  return { ...completed, completedReport: createReport({ ...completed, transcript: transcriptForReport(completed) }) };
 }
 
 function applyProviderTurn(state: AppState, turn: ProviderResponse): AppState {

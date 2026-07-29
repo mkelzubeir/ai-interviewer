@@ -29,10 +29,18 @@ describe("session state and recovery", () => {
   });
 
   it("migrates a v2 session instead of discarding an interview in progress", () => {
-    const { aiConsent: _consent, voiceTranscript: _voice, ...core } = emptySession;
+    const { aiConsent: _consent, voiceTranscript: _voice, preferredMode: _mode, ...core } = emptySession;
     const legacy = { ...core, version: 2, phase: "interview" as const, startedAt: 1, currentQuestion: question, questionsAsked: [question] };
     const migrated = parseStoredSession(JSON.stringify(legacy));
-    expect(migrated).toMatchObject({ version: 3, phase: "interview", aiConsent: false, voiceTranscript: [] });
+    expect(migrated).toMatchObject({ version: 4, phase: "interview", aiConsent: false, voiceTranscript: [], preferredMode: null });
+    expect(migrated?.questionsAsked).toEqual([question]);
+  });
+
+  it("migrates a v3 session, defaulting the mode to whatever the build offers", () => {
+    const { preferredMode: _mode, ...core } = emptySession;
+    const legacy = { ...core, version: 3, phase: "interview" as const, startedAt: 1, currentQuestion: question, questionsAsked: [question], aiConsent: true };
+    const migrated = parseStoredSession(JSON.stringify(legacy));
+    expect(migrated).toMatchObject({ version: 4, phase: "interview", aiConsent: true, preferredMode: null });
     expect(migrated?.questionsAsked).toEqual([question]);
   });
 
