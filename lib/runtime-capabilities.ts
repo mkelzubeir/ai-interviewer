@@ -39,3 +39,11 @@ export const voiceRequiresSignIn = !hasServerFeatures && Boolean(realtimeTokenUr
 
 export const staticDemoNotice =
   "This hosted demo is a static export with no server, so AI-adaptive questions run on the local deterministic engine instead. Run the project locally with an OpenAI API key to enable adaptive questions.";
+
+/**
+ * Shown when the app leads with the spoken interview but this deployment cannot
+ * actually start one. Silently handing someone a text form after promising
+ * voice is worse than saying plainly that voice is not wired up here.
+ */
+export const voiceUnavailableNotice =
+  "Voice mode is not configured on this deployment yet, so this will be a written interview. The questions, follow-ups and feedback report are exactly the same.";

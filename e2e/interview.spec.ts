@@ -101,9 +101,13 @@ test("voice mode on the static build asks signed-out users to sign in", async ({
 
   const consent = page.getByRole("checkbox");
   if (await consent.count() === 0) {
-    // No provider mode is configured in this build, so there is nothing to consent to.
+    // Voice is not wired up in this build. The landing page leads with voice, so
+    // the app must say why it cannot deliver one rather than silently handing
+    // over a text form.
+    await expect(page.getByText(/Voice mode is not configured on this deployment/i).first()).toBeVisible();
     await page.getByRole("button", { name: /Start interview/ }).click();
-    await expect(page.getByText("Live voice interview")).toHaveCount(0);
+    await expect(page.getByText(/Voice mode is not configured on this deployment/i).first()).toBeVisible();
+    await expect(page.locator("#answer")).toBeEnabled();
     return;
   }
 
