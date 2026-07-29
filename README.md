@@ -25,7 +25,7 @@ exception: its one server-side step moves to a Supabase Edge Function.
 | Session recovery after a refresh | ✅ | ✅ |
 | Feedback report | ✅ | ✅ |
 | AI-adaptive questions (OpenAI) | ❌ needs a server | ✅ with `OPENAI_API_KEY` |
-| Live voice interview (Realtime) | Requires the Edge Function deployed and `NEXT_PUBLIC_REALTIME_TOKEN_URL` set — see below | ✅ with `OPENAI_API_KEY` |
+| Live voice interview (Realtime) | ✅ signed in, via Edge Function | ✅ with `OPENAI_API_KEY` |
 | Sign in and save reports | ✅ | ✅ if Supabase is configured |
 
 On the static build the app detects that no route handler is present and runs
@@ -96,10 +96,6 @@ mocks no live device or Realtime session; test a real microphone manually
 before relying on it.
 
 ### Voice on the static demo
-
-> **Status:** the Edge Function is written and unit-tested but is not deployed
-> yet. Until the checklist below is completed, `NEXT_PUBLIC_REALTIME_TOKEN_URL`
-> is unset and the deployed demo runs the written interview only.
 
 GitHub Pages cannot run a route handler, so the deployed demo mints its client
 secret from a Supabase Edge Function instead. Everything after that is
