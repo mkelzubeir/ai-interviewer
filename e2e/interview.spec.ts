@@ -109,11 +109,21 @@ test("voice readiness is reported honestly", async ({ page }) => {
   await page.goto("interview");
   await fillBrief(page);
   const start = page.getByRole("button", { name: /Start voice interview/ });
+  const blockedReason = page.getByText(/Voice mode is not configured|anonymous sign-ins|Could not prepare a voice session/i);
+
+  // Start is disabled while the anonymous session is still being established,
+  // so settle first: either it becomes usable, or a reason is on screen.
+  await expect
+    .poll(async () => {
+      if (!(await start.isDisabled())) return "ready";
+      return (await blockedReason.count()) > 0 ? "blocked" : "pending";
+    }, { timeout: 20_000 })
+    .not.toBe("pending");
 
   if (await start.isDisabled()) {
     // Either the build has no token endpoint, or the session could not be
     // established. Both must say so rather than leaving a dead button.
-    await expect(page.getByText(/Voice mode is not configured|anonymous sign-ins|Could not prepare a voice session/i).first()).toBeVisible();
+    await expect(blockedReason.first()).toBeVisible();
     return;
   }
 

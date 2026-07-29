@@ -6,6 +6,7 @@ import { userSafeRealtimeError } from "@/lib/openai/realtime/error";
 import { normalizeTranscriptText } from "@/lib/openai/realtime/events";
 import { applyVoiceTurnEvent, canFinishAnswer, initialVoiceTurnState, resetVoiceTurnAfterResponse } from "@/lib/openai/realtime/turn-state";
 import { requestRealtimeCredential, resolveTokenSource } from "@/lib/openai/realtime/token-endpoint";
+import { releaseRealtimeClient } from "@/lib/openai/realtime/release";
 import type { NormalizedRealtimeEvent, RealtimeConnectionState } from "@/lib/openai/realtime/types";
 import type { VoiceTranscriptEntry } from "@/lib/schemas";
 import { hasServerFeatures, realtimeTokenUrl, withBasePath } from "@/lib/runtime-capabilities";
@@ -43,8 +44,7 @@ export function useRealtimeInterview({ context, onFinalTranscript, getAccessToke
   useEffect(() => { tokenRef.current = getAccessToken; }, [getAccessToken]);
 
   const close = useCallback(() => {
-    client.current?.close();
-    client.current = null;
+    releaseRealtimeClient(client);
   }, []);
 
   useEffect(() => close, [close]);
@@ -55,8 +55,7 @@ export function useRealtimeInterview({ context, onFinalTranscript, getAccessToke
     // short-circuits on the stale ref and voice can never be retried. Turns
     // already merged into the durable session are untouched.
     if (next === "failed" || next === "closed") {
-      client.current?.close();
-      client.current = null;
+      releaseRealtimeClient(client);
       setPartial("");
       setTurn(initialVoiceTurnState);
     }

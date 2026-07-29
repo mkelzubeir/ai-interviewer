@@ -2,6 +2,7 @@ import { normalizeRealtimeEvent } from "./events";
 import type { RealtimeCredential } from "./types";
 
 export class RealtimeInterviewClient {
+  private closed = false;
   private peer: RTCPeerConnection | null = null; private channel: RTCDataChannel | null = null; private stream: MediaStream | null = null; private audio: HTMLAudioElement | null = null;
   constructor(private readonly onEvent: (event: ReturnType<typeof normalizeRealtimeEvent>) => void, private readonly onState: (state: "connecting" | "connected" | "failed" | "closed") => void) {}
   async connect(credential: RealtimeCredential) {
@@ -20,5 +21,16 @@ export class RealtimeInterviewClient {
   // committed by server VAD; sending input_audio_buffer.commit would target an
   // empty manually-appended buffer and can create a duplicate response.
   interrupt() { this.channel?.send(JSON.stringify({ type: "response.cancel" })); this.channel?.send(JSON.stringify({ type: "output_audio_buffer.clear" })); }
-  close() { this.stream?.getTracks().forEach((track) => track.stop()); this.channel?.close(); this.peer?.close(); this.audio?.pause(); this.peer = null; this.channel = null; this.stream = null; this.audio = null; this.onState("closed"); }
+  close() {
+    // Idempotent: a second close must not emit another "closed" state, because
+    // the handler for that state releases the client and would re-enter here.
+    if (this.closed) return;
+    this.closed = true;
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.channel?.close();
+    this.peer?.close();
+    this.audio?.pause();
+    this.peer = null; this.channel = null; this.stream = null; this.audio = null;
+    this.onState("closed");
+  }
 }

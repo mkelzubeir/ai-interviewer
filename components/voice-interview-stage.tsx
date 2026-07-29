@@ -146,7 +146,7 @@ export function VoiceInterviewStage({
             <p className="mt-3 text-sm leading-6 text-slate-600">Your report is built from what you have said so far.</p>
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setConfirmEnd(false)} className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Keep going</button>
-              <button onClick={() => { voice.close(); onEnd(); }} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white">End and view report</button>
+              <button onClick={() => { try { voice.close(); } finally { onEnd(); } }} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white">End and view report</button>
             </div>
           </div>
         </div>
