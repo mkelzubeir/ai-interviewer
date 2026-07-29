@@ -126,9 +126,15 @@ export function VoiceInterviewStage({
                 <button onClick={voice.interrupt} disabled={!voice.canInterrupt} className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
                   Interrupt
                 </button>
+                {/* Available while live too: a session can go silent without the
+                    connection state ever changing, and there must always be a
+                    way out that is not "reload the page". */}
+                <button onClick={() => void voice.restart()} className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700">
+                  Restart voice
+                </button>
               </>
             ) : started ? (
-              <button onClick={() => void voice.start()} className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700">
+              <button onClick={() => void voice.restart()} className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700">
                 Retry voice
               </button>
             ) : null}

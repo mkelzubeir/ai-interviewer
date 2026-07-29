@@ -124,6 +124,18 @@ export function useRealtimeInterview({ context, onFinalTranscript, getAccessToke
     }
   }, [close, handleEvent, handleState, tokenSource]);
 
+  /**
+   * Tear down whatever exists and connect again.
+   *
+   * Safe from any state: releasing clears the ref synchronously, so `start`
+   * cannot be blocked by a stale client. This is what the retry controls call,
+   * including while a session still looks live but has gone silent.
+   */
+  const restart = useCallback(async () => {
+    releaseRealtimeClient(client);
+    await start();
+  }, [start]);
+
   return {
     status,
     error,
@@ -134,6 +146,7 @@ export function useRealtimeInterview({ context, onFinalTranscript, getAccessToke
     awaitingTurnEnd: canFinishAnswer(status, turn),
     canInterrupt: status === "connected" && turn.interviewerSpeaking && turn.responseActive,
     start,
+    restart,
     close,
     mute: (value: boolean) => client.current?.setMuted(value),
     interrupt: () => {
