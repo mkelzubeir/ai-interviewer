@@ -87,6 +87,26 @@ describe("choosing the transcript a report is built from", () => {
   });
 });
 
+describe("ending a spoken interview", () => {
+  it("writes the paired transcript into state so a saved report is not empty", async () => {
+    const { reducer } = await import("./interview-session");
+    const app = {
+      ...emptySession,
+      phase: "interview" as const,
+      startedAt: 1,
+      voiceTranscript: [say("interviewer", "Tell me about a rollout you owned."), say("candidate", "I led it across three regions and cut duplicates 28%.")],
+      hydrated: true,
+      recovery: null,
+      error: null,
+      loading: false,
+    };
+    const ended = reducer(app, { type: "END" });
+    expect(ended.phase).toBe("report");
+    expect(ended.transcript).toHaveLength(1);
+    expect(ended.completedReport?.questions).toHaveLength(1);
+  });
+});
+
 describe("report generation from a spoken interview", () => {
   it("produces real feedback rather than an empty report", () => {
     const session = {

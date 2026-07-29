@@ -73,10 +73,13 @@ function absorbLatestAnswer(state: AppState) {
 }
 
 function finish(state: AppState): AppState {
+  // A voice-only interview has no typed answers, so the transcript is derived
+  // from the paired spoken conversation. Written into state, not just handed to
+  // createReport, so a saved report carries its transcript too. This is a no-op
+  // for a typed interview, where transcriptForReport returns what is already there.
   const completed = { ...state, phase: "report" as const, currentQuestion: null };
-  // A voice-only interview has no typed answers, so the report is generated
-  // from the paired spoken conversation instead of an empty transcript.
-  return { ...completed, completedReport: createReport({ ...completed, transcript: transcriptForReport(completed) }) };
+  const withTranscript = { ...completed, transcript: transcriptForReport(completed) };
+  return { ...withTranscript, completedReport: createReport(withTranscript) };
 }
 
 function applyProviderTurn(state: AppState, turn: ProviderResponse): AppState {
