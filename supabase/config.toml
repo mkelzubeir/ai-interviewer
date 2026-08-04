@@ -5,3 +5,8 @@ project_id = "ai-interviewer"
 # the function. Defence in depth: the gateway rejects unsigned callers, and the
 # function itself rejects anything that does not resolve to a real user.
 verify_jwt = true
+
+[functions.job-link]
+# Same posture. This one also fetches a URL of the caller's choosing, so an
+# unauthenticated caller must never reach the fetch at all.
+verify_jwt = true
