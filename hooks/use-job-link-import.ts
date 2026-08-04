@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { requestJobDescription, resolveJobLinkSource, sourceLabel } from "@/lib/job-link";
+import { jobLinkReady, requestJobDescription, resolveJobLinkSource, sourceLabel } from "@/lib/job-link";
 import { hasServerFeatures, jobLinkUrl, withBasePath } from "@/lib/runtime-capabilities";
+import type { SessionStatus } from "@/hooks/use-anonymous-session";
 
 export type JobLinkState = { busy: boolean; message: string; failed: boolean };
 
@@ -15,7 +16,7 @@ export type JobLinkState = { busy: boolean; message: string; failed: boolean };
  * extraction is a starting point and the person applying knows the role better
  * than the parser does.
  */
-export function useJobLinkImport(getAccessToken: () => Promise<string | null>) {
+export function useJobLinkImport(session: { status: SessionStatus; getAccessToken: () => Promise<string | null> }) {
   const source = resolveJobLinkSource({ hasServerFeatures, routeUrl: withBasePath("/api/job-link"), edgeFunctionUrl: jobLinkUrl });
   const [state, setState] = useState<JobLinkState>({ busy: false, message: "", failed: false });
   // A second submit while one is in flight would race two writes into the field.
@@ -27,7 +28,7 @@ export function useJobLinkImport(getAccessToken: () => Promise<string | null>) {
       inFlight.current = true;
       setState({ busy: true, message: "Reading the posting…", failed: false });
       try {
-        const accessToken = source.requiresAuth ? await getAccessToken() : null;
+        const accessToken = source.requiresAuth ? await session.getAccessToken() : null;
         const result = await requestJobDescription({ source, url, accessToken });
         if (!result.ok) {
           setState({ busy: false, message: result.message, failed: true });
@@ -45,8 +46,14 @@ export function useJobLinkImport(getAccessToken: () => Promise<string | null>) {
         inFlight.current = false;
       }
     },
-    [getAccessToken, source],
+    [session, source],
   );
 
-  return { available: Boolean(source), state, importUrl };
+  return {
+    available: Boolean(source),
+    /** False while the session the Edge Function requires is still being established. */
+    ready: jobLinkReady(source, session.status),
+    state,
+    importUrl,
+  };
 }

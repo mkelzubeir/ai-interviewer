@@ -127,7 +127,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
     });
 
   const loadSample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 20, sampleMode: true });
-  const jobLink = useJobLinkImport(session.getAccessToken);
+  const jobLink = useJobLinkImport(session);
   // Never offer a Start that cannot mint a token: wait for the session when one is needed.
   const blocked = !voiceModeAvailable || (voiceNeedsSession && session.status !== "ready");
 
@@ -276,8 +276,10 @@ function LinkImport({ id, linkImport, onImported }: { id: string; linkImport: Re
           placeholder="https://jobs.example.com/senior-analyst"
           className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs outline-none transition focus:border-[#6e9c7c] focus:ring-4 focus:ring-[#dcebe0]"
         />
-        <button type="submit" disabled={busy || !url.trim()} className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50">
-          {busy ? "Reading…" : "Import link"}
+        {/* Never offer an import that cannot authenticate: the Edge Function
+            verifies a JWT, and the silent session arrives a moment after load. */}
+        <button type="submit" disabled={busy || !linkImport.ready || !url.trim()} className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50">
+          {busy ? "Reading…" : linkImport.ready ? "Import link" : "Preparing…"}
         </button>
       </div>
       {message && (

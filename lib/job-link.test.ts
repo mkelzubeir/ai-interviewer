@@ -5,6 +5,7 @@ import {
   fetchJobPage,
   importJobDescription,
   isBlockedHostname,
+  jobLinkReady,
   looksLikeJobPosting,
   normalizeJobUrl,
   readResponseText,
@@ -324,6 +325,19 @@ describe("resolveJobLinkSource", () => {
     expect(resolveJobLinkSource({ ...env, hasServerFeatures: true })).toMatchObject({ kind: "next-route", requiresAuth: false });
     expect(resolveJobLinkSource({ ...env, hasServerFeatures: false })).toMatchObject({ kind: "edge-function", requiresAuth: true });
     expect(resolveJobLinkSource({ ...env, hasServerFeatures: false, edgeFunctionUrl: "" })).toBeNull();
+  });
+});
+
+describe("jobLinkReady", () => {
+  const route = { kind: "next-route", url: "/api/job-link", requiresAuth: false } as const;
+  const edge = { kind: "edge-function", url: "https://ref.supabase.co/functions/v1/job-link", requiresAuth: true } as const;
+
+  it("waits for the session the Edge Function needs, and never waits without one", () => {
+    expect(jobLinkReady(edge, "loading")).toBe(false);
+    expect(jobLinkReady(edge, "failed")).toBe(false);
+    expect(jobLinkReady(edge, "ready")).toBe(true);
+    expect(jobLinkReady(route, "loading")).toBe(true);
+    expect(jobLinkReady(null, "ready")).toBe(false);
   });
 });
 

@@ -49,6 +49,19 @@ export function resolveJobLinkSource(env: JobLinkEnvironment): JobLinkSource | n
   return null;
 }
 
+/**
+ * Whether an import can be attempted right now.
+ *
+ * The Edge Function verifies a JWT, and the anonymous session that provides one
+ * is established asynchronously on page load. Firing before it exists produces a
+ * request that never leaves, so the control waits instead — the same rule the
+ * Start button follows.
+ */
+export function jobLinkReady(source: JobLinkSource | null, sessionStatus: string): boolean {
+  if (!source) return false;
+  return !source.requiresAuth || sessionStatus === "ready";
+}
+
 export type JobLinkResponse =
   | { ok: true; jobDescription: string; sourceUrl: string; distilled: boolean }
   | { ok: false; message: string };
