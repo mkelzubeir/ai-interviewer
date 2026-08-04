@@ -19,6 +19,14 @@ export const hasServerFeatures = process.env.NEXT_PUBLIC_SERVER_FEATURES !== "di
  */
 export const realtimeTokenUrl = process.env.NEXT_PUBLIC_REALTIME_TOKEN_URL ?? "";
 
+/**
+ * Supabase Edge Function that turns a link to a posting into job description
+ * text, which is how link import works on the static export. Also a public
+ * function URL, never a key. Without it — and without route handlers — the
+ * import affordance is hidden and pasting still works.
+ */
+export const jobLinkUrl = process.env.NEXT_PUBLIC_JOB_LINK_URL ?? "";
+
 /** Voice works from either a route handler or the Edge Function. */
 export const voiceModeAvailable = hasServerFeatures || Boolean(realtimeTokenUrl);
 

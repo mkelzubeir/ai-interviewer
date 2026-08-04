@@ -8,6 +8,7 @@ import { extractResumePdfText } from "@/lib/pdf-text";
 import { voiceModeAvailable, voiceNeedsSession, voiceUnavailableNotice } from "@/lib/runtime-capabilities";
 import { VoiceInterviewStage } from "@/components/voice-interview-stage";
 import { useAnonymousSession } from "@/hooks/use-anonymous-session";
+import { useJobLinkImport } from "@/hooks/use-job-link-import";
 import type { InterviewDuration, InterviewType, VoiceTranscriptEntry } from "@/lib/schemas";
 
 const interviewTypes: { id: InterviewType; label: string; description: string }[] = [
@@ -126,6 +127,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
     });
 
   const loadSample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 20, sampleMode: true });
+  const jobLink = useJobLinkImport(session.getAccessToken);
   // Never offer a Start that cannot mint a token: wait for the session when one is needed.
   const blocked = !voiceModeAvailable || (voiceNeedsSession && session.status !== "ready");
 
@@ -136,7 +138,9 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
           <i aria-hidden="true" className="size-2 rounded-full bg-[#5b9a75]" /> Live voice interview
         </p>
         <h1 className="mt-5 text-4xl font-semibold tracking-[-.045em] sm:text-5xl">Add your context, then start talking.</h1>
-        <p className="mt-5 leading-7 text-slate-600">Paste or upload your resume and the job description. The interviewer takes it from there.</p>
+        <p className="mt-5 leading-7 text-slate-600">
+          Paste or upload your resume{jobLink.available ? ", then paste the job description or a link to the posting" : " and the job description"}. The interviewer takes it from there.
+        </p>
       </div>
 
       <div className="mx-auto mt-10 max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 sm:p-8">
@@ -150,7 +154,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
 
         <div className="mt-7 grid gap-6">
           <Field label="Resume" id="resume" value={state.resume} onChange={(value) => set({ resume: value, sampleMode: false })} placeholder="Paste your resume here…" />
-          <Field label="Job description" id="job" value={state.jobDescription} onChange={(value) => set({ jobDescription: value, sampleMode: false })} placeholder="Paste the job description here…" />
+          <Field label="Job description" id="job" value={state.jobDescription} onChange={(value) => set({ jobDescription: value, sampleMode: false })} placeholder="Paste the job description, or a link to it, above…" linkImport={jobLink} />
 
           <div className="grid gap-6 md:grid-cols-[1fr_210px]">
             <fieldset>
@@ -186,6 +190,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
           Starting the interview sends your resume and job description, and your microphone audio, to OpenAI to run the
           conversation. Raw audio is not intentionally retained by this app, and the OpenAI API key stays server-side —
           it is never exposed to this page.
+          {jobLink.available && " Importing a link fetches that public page server-side and sends its text to OpenAI to pull out the role."}
         </p>
 
         {!voiceModeAvailable && <p role="status" className="mt-4 rounded-xl border border-[#e6d3b8] bg-[#fdf7ed] px-4 py-3 text-sm leading-6 text-[#7a5a2e]">{voiceUnavailableNotice}</p>}
@@ -205,7 +210,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
   );
 }
 
-function Field({ label, id, value, onChange, placeholder }: { label: string; id: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+function Field({ label, id, value, onChange, placeholder, linkImport }: { label: string; id: string; value: string; onChange: (value: string) => void; placeholder: string; linkImport?: ReturnType<typeof useJobLinkImport> }) {
   const [status, setStatus] = useState("");
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -222,6 +227,7 @@ function Field({ label, id, value, onChange, placeholder }: { label: string; id:
     <div>
       <label htmlFor={id} className="text-sm font-semibold">{label} <span className="font-normal text-slate-400">(required)</span></label>
       <div className="mt-2 rounded-xl border border-dashed border-[#9ebda7] bg-[#f4faf5] p-3">
+        {linkImport?.available && <LinkImport id={id} linkImport={linkImport} onImported={(text) => { setStatus(""); onChange(text); }} />}
         <label htmlFor={`${id}-pdf`} className="flex cursor-pointer items-center justify-between gap-4">
           <span className="text-xs leading-5 text-slate-600">Upload a PDF instead. Up to 5 MB; text is extracted in your browser.</span>
           <span className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm">Choose PDF</span>
@@ -231,6 +237,53 @@ function Field({ label, id, value, onChange, placeholder }: { label: string; id:
       </div>
       <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 min-h-36 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 outline-none transition focus:border-[#6e9c7c] focus:bg-white focus:ring-4 focus:ring-[#dcebe0]" />
     </div>
+  );
+}
+
+/**
+ * Paste the link to the role instead of the role.
+ *
+ * A form rather than a bare input, so Enter submits it. What comes back is
+ * written into the textarea below rather than hidden behind a reference to the
+ * URL — the person applying gets to read and correct it before it becomes the
+ * brief the interviewer works from.
+ */
+function LinkImport({ id, linkImport, onImported }: { id: string; linkImport: ReturnType<typeof useJobLinkImport>; onImported: (text: string) => void }) {
+  const [url, setUrl] = useState("");
+  const { busy, message, failed } = linkImport.state;
+
+  return (
+    <form
+      className="mb-3 border-b border-[#cfe3d4] pb-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void linkImport.importUrl(url, onImported);
+      }}
+    >
+      <label htmlFor={`${id}-url`} className="text-xs leading-5 text-slate-600">Paste a link to the role and we will pull the description in.</label>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input
+          id={`${id}-url`}
+          // Deliberately not type="url": that rejects `jobs.example.com/role`
+          // before it is submitted, which is exactly how a link gets pasted.
+          // `normalizeJobUrl` adds the scheme and does the real validation.
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://jobs.example.com/senior-analyst"
+          className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs outline-none transition focus:border-[#6e9c7c] focus:ring-4 focus:ring-[#dcebe0]"
+        />
+        <button type="submit" disabled={busy || !url.trim()} className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#315248] shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50">
+          {busy ? "Reading…" : "Import link"}
+        </button>
+      </div>
+      {message && (
+        <p role="status" className={`mt-2 text-xs leading-5 ${failed ? "text-[#a13d2a]" : "text-[#315248]"}`}>{message}</p>
+      )}
+    </form>
   );
 }
 

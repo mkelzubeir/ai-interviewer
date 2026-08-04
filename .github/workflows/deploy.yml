@@ -48,6 +48,9 @@ jobs:
           # A URL, never a key — OPENAI_API_KEY lives only in Supabase secrets.
           # Unset until the function is deployed, which simply leaves voice off.
           NEXT_PUBLIC_REALTIME_TOKEN_URL: ${{ vars.NEXT_PUBLIC_REALTIME_TOKEN_URL }}
+          # Public Supabase Edge Function URL that imports a job description
+          # from a link. Unset simply leaves that field out of the setup screen.
+          NEXT_PUBLIC_JOB_LINK_URL: ${{ vars.NEXT_PUBLIC_JOB_LINK_URL }}
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

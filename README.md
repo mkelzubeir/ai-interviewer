@@ -11,8 +11,9 @@ No account, no sign-in, no typing. Resume, job description, talk.
 
 ## How it works
 
-1. **Bring your context.** Paste or upload a resume and a job description (or
-   load the sample brief). PDF text is extracted in your browser.
+1. **Bring your context.** Paste or upload a resume, then paste the job
+   description — or just **paste the link to the posting** and let the app pull
+   the role out of the page. PDF text is extracted in your browser.
 2. **Talk it through.** The interviewer asks, listens, follows up, and you can
    interrupt it mid-sentence. Server VAD handles turn-taking.
 3. **Leave with a plan.** Every finalized turn is paired into a transcript and
@@ -29,6 +30,7 @@ Realtime client secret — so that moves to a Supabase Edge Function.
 | | Live demo | Local (`npm run dev`) |
 |---|---|---|
 | Resume / job description, PDF extraction | ✅ | ✅ |
+| Job description from a link | ✅ via Edge Function | ✅ with `OPENAI_API_KEY` |
 | Spoken interview | ✅ via Edge Function | ✅ with `OPENAI_API_KEY` |
 | Session recovery after a refresh | ✅ | ✅ |
 | Feedback report | ✅ | ✅ |
@@ -60,9 +62,42 @@ no session are needed for local development.
 | `NEXT_PUBLIC_SUPABASE_URL` | Static builds only: project hosting the Edge Function. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable key; safe in the client bundle. |
 | `NEXT_PUBLIC_REALTIME_TOKEN_URL` | Static builds only: the Edge Function URL. A URL, not a key. |
+| `NEXT_PUBLIC_JOB_LINK_URL` | Static builds only: the `job-link` Edge Function URL. A URL, not a key. |
 
 The environment is validated with Zod. A malformed value disables voice with a
 logged reason instead of failing mid-interview.
+
+## Job description from a link
+
+Paste `https://boards.greenhouse.io/acme/jobs/1` into the job description field
+and the role is written into the textarea, where you can read and correct it
+before it becomes the brief the interviewer works from.
+
+The fetch cannot happen in the browser — a job board on another origin is
+unreadable from a page — so it runs server-side: the Next.js route handler
+locally, the `job-link` Edge Function on the demo. Both share one pipeline in
+`supabase/functions/_shared/job-link.ts`:
+
+1. **Validate the URL.** http/https only, no credentials, and no private
+   address. Decimal, octal and hex spellings normalise through the WHATWG URL
+   parser before the check, so `http://2130706433/` is caught as loopback.
+2. **Fetch it, following redirects by hand.** Automatic redirects would defeat
+   step 1: a public URL is free to 302 to `169.254.169.254`. Every hop is
+   re-validated, the body is capped at 2 MB while it streams, and the request is
+   bounded by one timeout.
+3. **Extract.** If the page carries a schema.org `JobPosting` block — Greenhouse,
+   Lever, Workday and Ashby all publish one — that is used; otherwise the page is
+   reduced to text with scripts, navigation and footers dropped.
+4. **Distil.** The text goes to the Responses API, which returns the role under
+   fixed headings and is told to invent nothing. The page is passed as untrusted
+   data, never as instructions. If that call fails, the extracted text is
+   returned as-is rather than failing the import — the field is editable either
+   way.
+
+A posting that needs a login, renders entirely in JavaScript, or answers `403`
+to an identified bot cannot be imported. The app says which of those happened
+and asks you to paste instead; it does not impersonate a browser to get around a
+site that refused.
 
 ## Privacy
 
@@ -71,6 +106,10 @@ microphone audio to OpenAI to run the conversation. That is stated on the setup
 screen before anything is sent, and clicking **Start voice interview** is the
 consent action — there is no separate opt-in, because the interview *is* the
 product.
+
+Importing a link fetches that public page from the server and sends its text to
+OpenAI to pull out the role. That is stated on the setup screen too, and it only
+happens when you press **Import link**.
 
 The app does not intentionally retain raw audio. Realtime transcription is an
 aid and may differ from what the model heard. Your in-progress interview is
@@ -122,18 +161,29 @@ supabase secrets set OPENAI_API_KEY=sk-...
 supabase secrets set OPENAI_REALTIME_MODEL=gpt-realtime   # optional
 supabase secrets set OPENAI_REALTIME_VOICE=marin          # optional
 
-supabase db push          # or paste supabase/migrations/0002_*.sql into the SQL editor
+supabase secrets set OPENAI_MODEL=gpt-5.6-terra            # optional, job-link only
+
+supabase db push          # or paste supabase/migrations/000{2,3}_*.sql into the SQL editor
 supabase functions deploy realtime-token
+supabase functions deploy job-link
 ```
 
-Then point the client at it:
+Then point the client at them:
 
 ```bash
 gh variable set NEXT_PUBLIC_SUPABASE_URL --body 'https://<ref>.supabase.co'
 gh variable set NEXT_PUBLIC_SUPABASE_ANON_KEY --body '<publishable key>'
 gh variable set NEXT_PUBLIC_REALTIME_TOKEN_URL \
   --body 'https://<ref>.supabase.co/functions/v1/realtime-token'
+gh variable set NEXT_PUBLIC_JOB_LINK_URL \
+  --body 'https://<ref>.supabase.co/functions/v1/job-link'
 ```
+
+`job-link` is public and spends OpenAI credits, so it carries the same
+protections as the token function: JWT verification, the two-origin CORS
+allowlist, and a Postgres-backed quota of 12 imports per user per 10 minutes via
+`claim_job_link`. Leave `NEXT_PUBLIC_JOB_LINK_URL` unset and the demo simply
+hides the import field.
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected
 into Edge Functions automatically; do not set them yourself.
@@ -172,7 +222,9 @@ app/api/**/route.server.ts        server-only route; excluded from the static ex
 components/interview-app.tsx      setup → interview → report shell
 components/voice-interview-stage.tsx   the spoken interview surface
 hooks/use-anonymous-session.ts    silent Supabase session for the Edge Function
+hooks/use-job-link-import.ts      paste a link, get the job description back
 hooks/use-realtime-interview.ts   WebRTC lifecycle, turn state, transcript
+lib/job-link.ts                   endpoint choice + re-export of the pipeline
 lib/schemas.ts                    persisted session schema (v5) and migration
 lib/interview-session.ts          reducer and resilient localStorage operations
 lib/voice-transcript.ts           pairs a spoken conversation into report turns
@@ -180,9 +232,10 @@ lib/report.ts                     transcript-only deterministic feedback
 lib/openai/realtime/              Realtime client, event adapter, turn state
   └ token-endpoint.ts             picks route handler vs Edge Function
 lib/supabase/client.ts            browser client (publishable key only)
-supabase/functions/_shared/       session config + CORS, shared with Deno
+supabase/functions/_shared/       session config, CORS, job-link pipeline (Deno)
 supabase/functions/realtime-token Edge Function that mints client secrets
-supabase/migrations/              voice quota table and claim function
+supabase/functions/job-link       Edge Function that imports a posting from a URL
+supabase/migrations/              quota tables and claim functions
 e2e/                              Playwright specs against the static export
 ```
 
@@ -199,6 +252,10 @@ build, so it is absent from the export rather than merely disabled.
   spoken interview.
 - **OCR for scanned PDFs is out of scope.** A PDF with no text layer is rejected
   with a message asking you to paste the text instead.
+- **Link import reads what a page serves to a plain HTTP request.** Postings
+  behind a login (LinkedIn, most Workday tenants) or rendered client-side return
+  too little text to use, and are reported as such. There is no headless browser
+  and no attempt to look like one.
 - The report is generated deterministically from the transcript; it does not use
   a model to write feedback.
 - Realtime transcription drives the report, so a misheard word becomes a
