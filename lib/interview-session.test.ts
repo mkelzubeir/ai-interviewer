@@ -22,7 +22,7 @@ describe("setup and start", () => {
   });
 
   it("goes straight from setup into the interview", () => {
-    let state = reducer(initialState, { type: "SET_SETUP", resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 10, sampleMode: true });
+    let state = reducer(initialState, { type: "SET_SETUP", resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "recruiter", duration: 10, sampleMode: true });
     state = reducer(state, { type: "START" });
     expect(state).toMatchObject({ phase: "interview", sampleMode: true, remainingBudget: 4, questionBudget: 4 });
     expect(state.startedAt).toBeTypeOf("number");
@@ -60,12 +60,12 @@ describe("recovery", () => {
   });
 });
 
-describe("migrating sessions written before the app became voice-only", () => {
+describe("migrating sessions written before the stage model", () => {
   it("keeps a finished report readable", () => {
     const report = { score: 70, readiness: "Promising foundation", summary: "s", strongestDimension: "d", improvementArea: "i", competencies: [], concerns: [], stories: [], actions: [], questions: [] };
     const legacy = { version: 4, resume: "old resume", jobDescription: "old jd", interviewType: "behavioral", duration: 30, completedReport: report, transcript: [], voiceTranscript: [] };
     const migrated = parseStoredSession(JSON.stringify(legacy));
-    expect(migrated).toMatchObject({ version: 5, phase: "report", resume: "old resume", interviewType: "behavioral", duration: 30 });
+    expect(migrated).toMatchObject({ version: 6, phase: "report", resume: "old resume", interviewType: "behavioral", duration: 30 });
     expect(migrated?.completedReport?.score).toBe(70);
   });
 
@@ -73,7 +73,14 @@ describe("migrating sessions written before the app became voice-only", () => {
     // A half-finished typed interview cannot be resumed as a spoken one.
     const legacy = { version: 3, phase: "interview", resume: "old resume", jobDescription: "old jd", completedReport: null };
     const migrated = parseStoredSession(JSON.stringify(legacy));
-    expect(migrated).toMatchObject({ version: 5, phase: "setup", resume: "old resume", jobDescription: "old jd" });
+    expect(migrated).toMatchObject({ version: 6, phase: "setup", resume: "old resume", jobDescription: "old jd" });
+  });
+
+  it("maps retired interview types onto the nearest stage", () => {
+    const mixed = parseStoredSession(JSON.stringify({ version: 5, resume: "r", jobDescription: "j", interviewType: "mixed" }));
+    expect(mixed).toMatchObject({ version: 6, interviewType: "recruiter" });
+    const roleSpecific = parseStoredSession(JSON.stringify({ version: 5, resume: "r", jobDescription: "j", interviewType: "role-specific" }));
+    expect(roleSpecific).toMatchObject({ version: 6, interviewType: "hiring-manager" });
   });
 });
 

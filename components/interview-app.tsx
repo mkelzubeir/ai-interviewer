@@ -11,12 +11,11 @@ import { useAnonymousSession } from "@/hooks/use-anonymous-session";
 import { useJobLinkImport } from "@/hooks/use-job-link-import";
 import type { InterviewDuration, InterviewType, VoiceTranscriptEntry } from "@/lib/schemas";
 
-const interviewTypes: { id: InterviewType; label: string; description: string }[] = [
-  { id: "recruiter", label: "Recruiter screen", description: "Motivation, fit, and career direction." },
-  { id: "behavioral", label: "Behavioral interview", description: "Stories about action, ownership, and learning." },
-  { id: "hiring-manager", label: "Hiring manager", description: "Judgment, collaboration, and how you operate." },
-  { id: "role-specific", label: "Role-specific", description: "Scenarios drawn from the job description." },
-  { id: "mixed", label: "Mixed interview", description: "A balanced, realistic practice conversation." },
+const interviewStages: { id: InterviewType; label: string; description: string }[] = [
+  { id: "recruiter", label: "Recruiter screen", description: "Qualifications, interest, and logistics." },
+  { id: "hiring-manager", label: "Hiring manager", description: "Judgment, ownership, and how you'd approach the role." },
+  { id: "behavioral", label: "Behavioral / team", description: "STAR stories, collaboration, and soft skills." },
+  { id: "final", label: "Final round", description: "Fit, motivation, and long-term alignment." },
 ];
 
 type Dispatch = React.Dispatch<Parameters<typeof reducer>[1]>;
@@ -126,7 +125,7 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
       sampleMode: partial.sampleMode ?? state.sampleMode,
     });
 
-  const loadSample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "mixed", duration: 20, sampleMode: true });
+  const loadSample = () => set({ resume: sampleResume, jobDescription: sampleJobDescription, interviewType: "recruiter", duration: 20, sampleMode: true });
   const jobLink = useJobLinkImport(session);
   // Never offer a Start that cannot mint a token: wait for the session when one is needed.
   const blocked = !voiceModeAvailable || (voiceNeedsSession && session.status !== "ready");
@@ -158,13 +157,13 @@ function Setup({ state, dispatch, session }: { state: typeof initialState; dispa
 
           <div className="grid gap-6 md:grid-cols-[1fr_210px]">
             <fieldset>
-              <legend className="text-sm font-semibold">Interview type</legend>
+              <legend className="text-sm font-semibold">Interview stage</legend>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {interviewTypes.map((type) => (
-                  <label key={type.id} className={`cursor-pointer rounded-xl border p-3 text-sm ${state.interviewType === type.id ? "border-[#6e9c7c] bg-[#edf6ef]" : "border-slate-200"}`}>
-                    <input className="sr-only" type="radio" name="type" checked={state.interviewType === type.id} onChange={() => set({ interviewType: type.id })} />
-                    <span className="block font-semibold">{type.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">{type.description}</span>
+                {interviewStages.map((stage) => (
+                  <label key={stage.id} className={`cursor-pointer rounded-xl border p-3 text-sm ${state.interviewType === stage.id ? "border-[#6e9c7c] bg-[#edf6ef]" : "border-slate-200"}`}>
+                    <input className="sr-only" type="radio" name="type" checked={state.interviewType === stage.id} onChange={() => set({ interviewType: stage.id })} />
+                    <span className="block font-semibold">{stage.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{stage.description}</span>
                   </label>
                 ))}
               </div>

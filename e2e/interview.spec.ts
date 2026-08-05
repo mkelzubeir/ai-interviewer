@@ -21,15 +21,15 @@ async function fillBrief(page: Page) {
   await page.locator("#job").fill(JOB);
 }
 
-/** A v5 session mid-interview, seeded directly so recovery is testable without a live Realtime session. */
+/** A v6 session mid-interview, seeded directly so recovery is testable without a live Realtime session. */
 function interviewInProgress() {
   return {
-    version: 5,
+    version: 6,
     phase: "interview",
     sampleMode: false,
     resume: RESUME,
     jobDescription: JOB,
-    interviewType: "mixed",
+    interviewType: "recruiter",
     duration: 20,
     startedAt: Date.now(),
     questionBudget: 7,

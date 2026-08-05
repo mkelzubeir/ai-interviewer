@@ -15,7 +15,8 @@ No account, no sign-in, no typing. Resume, job description, talk.
    description — or just **paste the link to the posting** and let the app pull
    the role out of the page. PDF text is extracted in your browser.
 2. **Talk it through.** The interviewer asks, listens, follows up, and you can
-   interrupt it mid-sentence. Server VAD handles turn-taking.
+   interrupt it mid-sentence. Semantic VAD waits for you to finish a thought
+   instead of pouncing on the first pause.
 3. **Leave with a plan.** Every finalized turn is paired into a transcript and
    run through the report generator.
 
@@ -142,7 +143,7 @@ per-user rate limiting without asking anyone for an email.
 > (Authentication → Sign In / Providers). Without it every token request fails
 > and the setup screen says so instead of offering a dead button.
 
-Session configuration (model, voice, server VAD timings, transcription) is
+Session configuration (model, voice, turn detection, transcription) is
 shared by both callers from `supabase/functions/_shared/realtime-session.ts`, so
 the two paths cannot drift.
 

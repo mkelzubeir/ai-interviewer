@@ -103,7 +103,7 @@ export function VoiceInterviewStage({
                 </li>
               )}
               {!transcript.length && !voice.partial && (
-                <li className="py-6 text-center text-sm text-slate-500">{live ? "Say hello to get started." : statusLabel[voice.status] ?? ""}</li>
+                <li className="py-6 text-center text-sm text-slate-500">{live ? "The interviewer will open the conversation — answer when they finish." : statusLabel[voice.status] ?? ""}</li>
               )}
             </ol>
           )}

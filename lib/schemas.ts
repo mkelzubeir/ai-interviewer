@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const interviewTypeSchema = z.enum(["recruiter", "behavioral", "hiring-manager", "role-specific", "mixed"]);
+/** The stages of a real interview loop. One stage per practice session. */
+export const interviewTypeSchema = z.enum(["recruiter", "hiring-manager", "behavioral", "final"]);
 export const durationSchema = z.union([z.literal(10), z.literal(20), z.literal(30)]);
 
 /** A turn in the interview, derived from the spoken conversation at the end. */
@@ -16,13 +17,16 @@ export const voiceTranscriptEntrySchema = z.object({ id: z.string(), speaker: z.
 /**
  * The persisted interview.
  *
- * Version 5 is the voice-only shape: the local question engine and the typed
+ * Version 5 was the voice-only shape: the local question engine and the typed
  * answer flow are gone, so the state the engine needed went with them. The
  * spoken conversation is the record; `transcript` is derived from it when the
  * interview ends and is what the report is built from.
+ *
+ * Version 6 replaces the loose interview "types" with the four stages of a real
+ * interview loop (recruiter screen → hiring manager → behavioral → final).
  */
 export const sessionSchema = z.object({
-  version: z.literal(5),
+  version: z.literal(6),
   phase: z.enum(["setup", "interview", "report"]),
   sampleMode: z.boolean(),
   resume: z.string(),
@@ -45,17 +49,23 @@ export type InterviewReport = z.infer<typeof reportSchema>;
 export type StoredSession = z.infer<typeof sessionSchema>;
 export type VoiceTranscriptEntry = z.infer<typeof voiceTranscriptEntrySchema>;
 
+/** Interview types that existed before the stage model, mapped to the nearest stage. */
+const legacyInterviewTypeSchema = z.enum(["recruiter", "behavioral", "hiring-manager", "role-specific", "mixed"]).transform(
+  (value): InterviewType => (value === "mixed" ? "recruiter" : value === "role-specific" ? "hiring-manager" : value),
+);
+
 /**
- * Anything written before the app became voice-only. Those sessions describe a
- * typed interview driven by a question engine that no longer exists, so only
- * the parts that still mean something are carried across: the candidate's
- * documents and any report they already finished.
+ * Anything written before version 6. Old sessions describe either a typed
+ * interview driven by a question engine that no longer exists, or a spoken one
+ * under interview types that no longer exist, so only the parts that still mean
+ * something are carried across: the candidate's documents and any report they
+ * already finished.
  */
 const legacySessionSchema = z.object({
   version: z.number(),
   resume: z.string().optional(),
   jobDescription: z.string().optional(),
-  interviewType: interviewTypeSchema.optional(),
+  interviewType: z.union([interviewTypeSchema, legacyInterviewTypeSchema]).optional(),
   duration: durationSchema.optional(),
   completedReport: reportSchema.nullable().optional(),
   transcript: z.array(transcriptEntrySchema).optional(),
@@ -72,14 +82,15 @@ export function migrateSession(raw: unknown): StoredSession | null {
   const report = legacy.data.completedReport ?? null;
   const duration = legacy.data.duration ?? 20;
   return {
-    version: 5,
-    // A finished report is still worth reading; an interview mid-flight in the
-    // old typed format cannot be resumed as a spoken one, so it returns to setup.
+    version: 6,
+    // A finished report is still worth reading; an interview mid-flight under
+    // the old rules cannot honestly be resumed under the new ones, so it
+    // returns to setup with the documents intact.
     phase: report ? "report" : "setup",
     sampleMode: false,
     resume: legacy.data.resume ?? "",
     jobDescription: legacy.data.jobDescription ?? "",
-    interviewType: legacy.data.interviewType ?? "mixed",
+    interviewType: legacy.data.interviewType ?? "recruiter",
     duration,
     startedAt: null,
     questionBudget: budgetForDuration(duration),

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { requestRealtimeCredential, resolveTokenSource, type TokenSource } from "./token-endpoint";
 
-const context = { interviewType: "mixed", roleSummary: "role", candidateSummary: "candidate", competencies: [], claims: [], remainingBudget: 5 };
+const context = { interviewType: "recruiter", roleSummary: "role", candidateSummary: "candidate", competencies: [], claims: [], remainingBudget: 5 };
 
 const nextRoute: TokenSource = { kind: "next-route", url: "/ai-interviewer/api/realtime/session", requiresAuth: false };
 const edgeFunction: TokenSource = { kind: "edge-function", url: "https://project.supabase.co/functions/v1/realtime-token", requiresAuth: true };
@@ -43,7 +43,7 @@ describe("credential request", () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe(nextRoute.url);
     expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
-    expect(JSON.parse(String(init?.body))).toMatchObject({ sessionId: "abc", interviewType: "mixed" });
+    expect(JSON.parse(String(init?.body))).toMatchObject({ sessionId: "abc", interviewType: "recruiter" });
   });
 
   it("sends the Supabase access token as a bearer token to the Edge Function", async () => {

@@ -16,12 +16,12 @@ export type Action =
   | { type: "RESTART" };
 
 export const emptySession: StoredSession = {
-  version: 5,
+  version: 6,
   phase: "setup",
   sampleMode: false,
   resume: "",
   jobDescription: "",
-  interviewType: "mixed",
+  interviewType: "recruiter",
   duration: 20,
   startedAt: null,
   questionBudget: 7,
